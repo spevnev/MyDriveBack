@@ -1,0 +1,12 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Test {
+  number: Int!
+}
+
+type Query {
+  getTest: Test
+  setTest(number: Int!): Test
+}
