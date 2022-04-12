@@ -1,10 +1,12 @@
 import {UserModel} from "./user.model";
 import {Args, Mutation, Query, Resolver} from "@nestjs/graphql";
 import {UserService} from "./user.service";
-import {HashService} from "../services/hash.service";
+import {HashService} from "../../services/hash.service";
 import {AuthenticationArgs} from "./dto/authentication.args";
-import {TokenService} from "../services/token.service";
+import {TokenService} from "../../services/token.service";
 import {AuthenticationReturn} from "./dto/authentication.return";
+import {UseInterceptors} from "@nestjs/common";
+import {AuthenticationMiddleware} from "../../interceptors/authentication.interceptor";
 
 @Resolver(of => UserModel)
 export class UserResolver {
@@ -14,11 +16,18 @@ export class UserResolver {
 		private tokenService: TokenService,
 	) {}
 
-	@Query(returns => String)
-	hello(): string { return "hello"; }
+	@Query(returns => UserModel, {nullable: true})
+	@UseInterceptors(AuthenticationMiddleware)
+	async user(
+		@Args("username", {type: () => String}) username: string,
+	): Promise<UserModel | null> {
+		return await this.userService.getUser(username);
+	}
 
 	@Mutation(returns => AuthenticationReturn)
-	async login(@Args() {username, password}: AuthenticationArgs): Promise<{ token: string } | { error: string }> {
+	async login(
+		@Args({type: () => AuthenticationArgs}) {username, password}: AuthenticationArgs,
+	): Promise<{ token: string } | { error: string }> {
 		const user: UserModel | null = await this.userService.getUser(username);
 		if (user === null) return {error: "Incorrect username and/or password!"};
 
@@ -30,7 +39,9 @@ export class UserResolver {
 	}
 
 	@Mutation(returns => AuthenticationReturn)
-	async signup(@Args() {username, password}: AuthenticationArgs): Promise<{ token: string } | { error: string }> {
+	async signup(
+		@Args({type: () => AuthenticationArgs}) {username, password}: AuthenticationArgs,
+	): Promise<{ token: string } | { error: string }> {
 		const user: UserModel | null = await this.userService.getUser(username);
 		if (user !== null) return {error: "This username is already taken!"};
 

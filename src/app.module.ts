@@ -2,7 +2,7 @@ import {Module} from "@nestjs/common";
 import {GraphQLModule} from "@nestjs/graphql";
 import {ApolloDriver, ApolloDriverConfig} from "@nestjs/apollo";
 import * as path from "path";
-import {UserModule} from "./user/user.module";
+import {UserModule} from "./api/user/user.module";
 import {ServiceModule} from "./services/service.module";
 
 @Module({
