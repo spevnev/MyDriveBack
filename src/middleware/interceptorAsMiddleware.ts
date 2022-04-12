@@ -1,6 +1,8 @@
 import {Request, Response} from "express";
-import {CallHandler, ExecutionContext, NestInterceptor} from "@nestjs/common";
+import {CallHandler, ExecutionContext, NestInterceptor, UseInterceptors} from "@nestjs/common";
 import {Observable} from "rxjs";
+
+export const UseMiddlewares = UseInterceptors;
 
 export abstract class InterceptorMiddleware implements NestInterceptor {
 	abstract use(req: Request, res: Response): Promise<number | null>;

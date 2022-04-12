@@ -5,8 +5,8 @@ import {HashService} from "../../services/hash.service";
 import {AuthenticationArgs} from "./dto/authentication.args";
 import {TokenService} from "../../services/token.service";
 import {AuthenticationReturn} from "./dto/authentication.return";
-import {UseInterceptors} from "@nestjs/common";
-import {AuthenticationMiddleware} from "../../interceptors/authentication.interceptor";
+import {AuthenticationMiddleware} from "../../middleware/authentication.middleware";
+import {UseMiddlewares} from "../../middleware/interceptorAsMiddleware";
 
 @Resolver(of => UserModel)
 export class UserResolver {
@@ -17,7 +17,7 @@ export class UserResolver {
 	) {}
 
 	@Query(returns => UserModel, {nullable: true})
-	@UseInterceptors(AuthenticationMiddleware)
+	@UseMiddlewares(AuthenticationMiddleware)
 	async user(
 		@Args("username", {type: () => String}) username: string,
 	): Promise<UserModel | null> {
