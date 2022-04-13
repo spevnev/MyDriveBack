@@ -5,18 +5,18 @@ import {Observable} from "rxjs";
 export const UseMiddlewares = UseInterceptors;
 
 export abstract class InterceptorMiddleware implements NestInterceptor {
-	abstract use(req: Request, res: Response): Promise<number | null>;
+	abstract use(req: Request): Promise<[number, object?]>;
 
 	async intercept(context: ExecutionContext, next: CallHandler<any>): Promise<Observable<any>> {
-		const ctxt: { req: Request } = context.getArgs()[2];
+		const ctxt: { req: Request } = context.getArgByIndex(2);
 		const req: Request = ctxt.req;
 		const res: Response = req.res;
 
-		const result = await this.use(req, res);
-		if (result === null) return next.handle();
+		const [statusCode, middlewareData] = await this.use(req);
+		context.getArgByIndex(2).middlewareData = middlewareData;
+		if (statusCode === 200) return next.handle();
 
-		res.sendStatus(result);
+		res.sendStatus(statusCode);
 		return new Observable();
-
 	}
 }

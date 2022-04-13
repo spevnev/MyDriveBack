@@ -32,11 +32,12 @@ export class DBService {
 			[`create table if not exists files
 			(
 				id          serial    primary key,
+				owner_id    int          not null,
 				parent_id   int          not null,
 				type        varchar(75)  not null,
 				size        int          not null,
 				name        varchar(256) not null,
-				modified_at  varchar(16)  not null default (round(extract(epoch from now()) * 1000))
+				modified_at  int          not null default (round(extract(epoch from now()) * 1000))
 			);`],
 			[`create table if not exists shared
 			(
@@ -56,8 +57,9 @@ export class DBService {
 	async createIndexes(): Promise<void> {
 		await this.transaction([
 			[`create index if not exists files_parent_idx   on files   (parent_id);`],
-			[`create index if not exists shared_sharer_idx on shared (sharer);`],
-			[`create index if not exists shared_file_idx    on shared (file_id);`],
+			[`create index if not exists shared_sharer_idx on shared (sharer);   `],
+			[`create index if not exists shared_file_idx    on shared (file_id);   `],
+			[`create index if not exists files_parent_idx   on files (owner_id);   `],
 		]);
 	}
 
