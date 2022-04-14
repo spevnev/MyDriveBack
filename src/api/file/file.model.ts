@@ -6,11 +6,14 @@ export class FileModel {
 	@Field(type => Number)
 	id: number;
 
-	@Field(type => Number)
-	parent_id: number;
+	@Field(type => Number, {nullable: true})
+	parent_id: number | null;
 
 	@Field(type => Number)
 	owner_id: number;
+
+	@Field(type => Number, {nullable: true})
+	share_id: number | null;
 
 	@Field(type => String)
 	@MaxLength(75)
@@ -23,6 +26,6 @@ export class FileModel {
 	@MaxLength(256)
 	name: string;
 
-	@Field(type => Number)
-	modified_at: number;
+	@Field(type => String)
+	modified_at: string;
 }

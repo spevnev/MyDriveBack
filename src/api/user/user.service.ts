@@ -15,10 +15,10 @@ export class UserService {
 		return user[0];
 	}
 
-	async createUser(user: UserModel): Promise<boolean> {
-		const result = await this.DBService.query("insert into users(username, password) values($1, $2);", [user.username, user.password]);
-		if (result === null) return false;
+	async createUser(user: { username: string, password: string }): Promise<number | null> {
+		const result = await this.DBService.query("insert into users(username, password) values($1, $2) returning id;", [user.username, user.password]);
+		if (!result[0]) return null;
 
-		return true;
+		return result[0].id;
 	}
 }

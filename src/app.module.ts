@@ -4,6 +4,7 @@ import {ApolloDriver, ApolloDriverConfig} from "@nestjs/apollo";
 import * as path from "path";
 import {UserModule} from "./api/user/user.module";
 import {ServiceModule} from "./services/service.module";
+import {FileModule} from "./api/file/file.module";
 
 @Module({
 	imports: [
@@ -14,8 +15,9 @@ import {ServiceModule} from "./services/service.module";
 				numberScalarMode: "integer",
 			},
 		}),
+		ServiceModule,
 		UserModule,
-		ServiceModule
+		FileModule,
 	],
 })
 export class AppModule {}

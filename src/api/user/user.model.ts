@@ -3,6 +3,9 @@ import {MaxLength, MinLength} from "class-validator";
 
 @ObjectType()
 export class UserModel {
+	@Field(type => Number)
+	id: number;
+
 	@Field(type => String)
 	@MinLength(4)
 	@MaxLength(32)

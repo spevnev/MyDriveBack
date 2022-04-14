@@ -7,7 +7,6 @@ import {TokenService} from "../../services/token.service";
 import {AuthenticationReturn} from "./dto/authentication.return";
 import {AuthenticationMiddleware} from "../../middleware/authentication.middleware";
 import {UseMiddlewares} from "../../middleware/interceptorAsMiddleware";
-import {MiddlewareData} from "../../middleware/middlewareDataDecorator";
 
 @Resolver(of => UserModel)
 export class UserResolver {
@@ -21,9 +20,8 @@ export class UserResolver {
 	@UseMiddlewares(AuthenticationMiddleware)
 	async user(
 		@Args("username", {type: () => String}) username: string,
-		@MiddlewareData() user: { username: string },
 	): Promise<UserModel | null> {
-		return await this.userService.getUser(username || user.username);
+		return await this.userService.getUser(username);
 	}
 
 	@Mutation(returns => AuthenticationReturn)
@@ -31,12 +29,12 @@ export class UserResolver {
 		@Args({type: () => AuthenticationArgs}) {username, password}: AuthenticationArgs,
 	): Promise<{ token: string } | { error: string }> {
 		const user: UserModel | null = await this.userService.getUser(username);
-		if (user === null) return {error: "Incorrect username and/or password!"}; // username
+		if (user === null) return {error: "Incorrect username and/or password!"};
 
 		const isPasswordCorrect = await this.hashService.compare(user.password, password);
-		if (!isPasswordCorrect) return {error: "Incorrect username and/or password!"}; // password
+		if (!isPasswordCorrect) return {error: "Incorrect username and/or password!"};
 
-		const token = await this.tokenService.generateJWT({username});
+		const token = await this.tokenService.generateJWT({username, id: user.id});
 		return {token};
 	}
 
@@ -48,9 +46,9 @@ export class UserResolver {
 		if (user !== null) return {error: "This username is already taken!"};
 
 		const hashedPassword = await this.hashService.hash(password);
-		await this.userService.createUser({username, password: hashedPassword});
+		const id: number = await this.userService.createUser({username, password: hashedPassword});
 
-		const token = await this.tokenService.generateJWT({username});
+		const token = await this.tokenService.generateJWT({username, id});
 		return {token};
 	}
 }

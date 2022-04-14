@@ -31,35 +31,34 @@ export class DBService {
 		await this.transaction([
 			[`create table if not exists files
 			(
-				id          serial    primary key,
-				owner_id    int          not null,
-				parent_id   int          not null,
-				type        varchar(75)  not null,
-				size        int          not null,
-				name        varchar(256) not null,
-				modified_at  int          not null default (round(extract(epoch from now()) * 1000))
+				id         serial primary key,
+				parent_id  int,
+				share_id   int,
+				owner_id   int          not null,
+				type       varchar(75)  not null,
+				size       int          not null,
+				name       varchar(256) not null,
+				modified_at bigint       not null default (round(extract(epoch from now()) * 1000))
 			);`],
-			[`create table if not exists shared
+			[`create table if not exists share
 			(
-				owner       varchar(32) not null,
-				sharer      varchar(32) not null,
-				file_id      int         not null,
-				can_modify  boolean     not null
+				id             serial primary key,
+			    can_edit_users int[]  not null default '{}',
+    			can_read_users int[]  not null default '{}'
 			);`],
 			[`create table if not exists users
     		(
-    			username    varchar(32) primary key,
-    			password    varchar(60) not null
+    			id       serial          primary key,
+    			username varchar(32) unique not null,
+    			password varchar(60)        not null
 			);`],
 		]);
 	}
 
 	async createIndexes(): Promise<void> {
 		await this.transaction([
-			[`create index if not exists files_parent_idx   on files   (parent_id);`],
-			[`create index if not exists shared_sharer_idx on shared (sharer);   `],
-			[`create index if not exists shared_file_idx    on shared (file_id);   `],
-			[`create index if not exists files_parent_idx   on files (owner_id);   `],
+			[`create index if not exists files_parent_idx    on files  (parent_id);`],
+			[`create index if not exists users_username_idx on users (username); `],
 		]);
 	}
 
