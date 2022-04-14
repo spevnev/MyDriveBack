@@ -13,7 +13,7 @@ export class FileModel {
 	owner_id: number;
 
 	@Field(type => Number, {nullable: true})
-	share_id: number | null;
+	share_id: number;
 
 	@Field(type => String)
 	@MaxLength(75)
