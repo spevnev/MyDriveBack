@@ -7,6 +7,7 @@ import {TokenService} from "../../services/token.service";
 import {AuthenticationReturn} from "./dto/authentication.return";
 import {AuthenticationMiddleware} from "../../middleware/authentication.middleware";
 import {UseMiddlewares} from "../../middleware/interceptorAsMiddleware";
+import {MiddlewareData} from "../../middleware/middlewareDataDecorator";
 
 @Resolver(of => UserModel)
 export class UserResolver {
@@ -19,9 +20,10 @@ export class UserResolver {
 	@Query(returns => UserModel, {nullable: true})
 	@UseMiddlewares(AuthenticationMiddleware)
 	async user(
-		@Args("username", {type: () => String}) username: string,
+		@Args("username", {type: () => String, nullable: true}) username: string | null,
+		@MiddlewareData() user: { username: string },
 	): Promise<UserModel | null> {
-		return await this.userService.getUser(username);
+		return await this.userService.getUser(username || user.username);
 	}
 
 	@Mutation(returns => AuthenticationReturn)

@@ -20,44 +20,79 @@ export class FileResolver {
 		const file: FileModel | null = await this.fileService.getFile(id);
 		if (file === null) return null;
 
-		const isShared: object | null = await this.fileService.getSharePolicy(id, user_id);
+		const isShared: object | null = await this.fileService.hasAccess(user_id, null, file.share_id);
 		if (file.owner_id !== user_id && isShared === null) return null;
 		return file;
 	}
 
-	@Query(returns => [FileModel])
-	files(
-		@Args("parent_id", {type: () => Number}) parent_id: number,
-	): FileModel[] {
-		// check access
-		return [];
+	@Query(returns => [FileModel], {nullable: true})
+	async entries(
+		@Args("parent_id", {type: () => Number, nullable: true, defaultValue: null}) parent_id: number | null,
+		@MiddlewareData() {id: user_id}: { id: number },
+	): Promise<FileModel[] | null> {
+		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
+		if (hasAccess === null) return null;
+
+		if (parent_id) return await this.fileService.getEntriesInFolder(parent_id);
+		return await this.fileService.getEntriesInRoot(user_id);
+	}
+
+	@Query(returns => [FileModel], {nullable: true})
+	async files(
+		@Args("parent_id", {type: () => Number, nullable: true, defaultValue: null}) parent_id: number | null,
+		@MiddlewareData() {id: user_id}: { id: number },
+	): Promise<FileModel[] | null> {
+		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
+		if (hasAccess === null) return null;
+
+		if (parent_id) return await this.fileService.getFilesInFolder(parent_id);
+		return await this.fileService.getFilesInRoot(user_id);
+	}
+
+	@Query(returns => [FileModel], {nullable: true})
+	async folders(
+		@Args("parent_id", {type: () => Number, nullable: true, defaultValue: null}) parent_id: number | null,
+		@MiddlewareData() {id: user_id}: { id: number },
+	): Promise<FileModel[] | null> {
+		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
+		if (hasAccess === null) return null;
+
+		if (parent_id) return await this.fileService.getFoldersInFolder(parent_id);
+		return await this.fileService.getFoldersInRoot(user_id);
+	}
+
+	@Query(returns => [FileModel], {nullable: true})
+	async rootSharedFolders(
+		@MiddlewareData() {id: user_id}: { id: number },
+	): Promise<FileModel[] | null> {
+		return await this.fileService.getSharedFoldersInRoot(user_id);
 	}
 
 	@Query(returns => String)
-	downloadLink(
+	async downloadLink(
 		@Args("id", {type: () => Number}) id: number,
-	): string {
+	): Promise<string> {
 		// check access
 		return "download link";
 	}
 
 	@Mutation(returns => String)
-	uploadLink(
+	async uploadLink(
 		@Args("parent_id", {type: () => Number}) parent_id: number,
 		@Args("size", {type: () => Number}) size: number,
 		@Args("type", {type: () => String}) type: string,
 		@Args("filename", {type: () => String}) filename: string,
 		@MiddlewareData() {id: owner_id}: { id: number },
-	): string {
+	): Promise<string> {
 		// check access to parent_id
 		return "upload link";
 	}
 
 	@Mutation(returns => Boolean)
-	rename(
+	async rename(
 		@Args("id", {type: () => Number}) id: number,
 		@Args("newFilename", {type: () => String}) newFilename: string,
-	): boolean {
+	): Promise<boolean> {
 		// check access
 		return false;
 	}

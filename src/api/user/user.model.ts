@@ -1,5 +1,5 @@
 import {Field, ObjectType} from "@nestjs/graphql";
-import {MaxLength, MinLength} from "class-validator";
+import {MaxLength, Min, MinLength} from "class-validator";
 
 @ObjectType()
 export class UserModel {
@@ -15,4 +15,8 @@ export class UserModel {
 	@MinLength(4)
 	@MaxLength(576)
 	password: string;
+
+	@Field(type => Number)
+	@Min(0)
+	space_used: number;
 }

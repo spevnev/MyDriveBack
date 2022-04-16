@@ -17,6 +17,6 @@ export class AuthenticationMiddleware extends InterceptorMiddleware {
 		const data = await this.tokenService.verifyJWT(value);
 		if (data === null) return [401];
 
-		return [200, {username: data.username}];
+		return [200, data];
 	}
 }
