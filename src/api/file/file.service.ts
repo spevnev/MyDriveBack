@@ -1,6 +1,8 @@
 import {Injectable} from "@nestjs/common";
 import {DBService} from "../../services/db.service";
 import {FileModel} from "./file.model";
+import {SimpleFileEntry} from "./dto/uploadFiles.args";
+import {FileEntry} from "./dto/uploadFilesAndFolders.args";
 
 @Injectable()
 export class FileService {
@@ -25,11 +27,11 @@ export class FileService {
 	}
 
 	async getFilesInFolder(parent_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id = $1 and type != 'directory';", [parent_id]) as FileModel[];
+		return await this.DBService.query("select * from files where parent_id = $1 and is_directory = false;", [parent_id]) as FileModel[];
 	}
 
 	async getFoldersInFolder(parent_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id = $1 and type = 'directory';", [parent_id]) as FileModel[];
+		return await this.DBService.query("select * from files where parent_id = $1 and is_directory = true;", [parent_id]) as FileModel[];
 	}
 
 	async getEntriesInRoot(user_id: number): Promise<FileModel[]> {
@@ -37,18 +39,18 @@ export class FileService {
 	}
 
 	async getFilesInRoot(user_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id is null and owner_id = $1 and type != 'directory';", [user_id]) as FileModel[];
+		return await this.DBService.query("select * from files where parent_id is null and owner_id = $1 and is_directory = false;", [user_id]) as FileModel[];
 	}
 
 	async getFoldersInRoot(user_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id is null and owner_id = $1 and type = 'directory';", [user_id]) as FileModel[];
+		return await this.DBService.query("select * from files where parent_id is null and owner_id = $1 and is_directory = true;", [user_id]) as FileModel[];
 	}
 
 	async getSharedFoldersInRoot(user_id: number): Promise<FileModel[]> {
 		return await this.DBService.query(`
 			with
 				sub as (select root_file from share as s where s.can_read_users @> $1),
-				f as (select * from files where parent_id is null and type = 'directory')
+				f as (select * from files where parent_id is null and is_directory = true)
 			select *
 			from f, sub
 			where f.id = sub.root_file;
@@ -74,5 +76,53 @@ export class FileService {
 		if (file.owner_id === user_id) return {canEdit: true};
 
 		return await this.getSharePolicy(file.share_id, user_id);
+	}
+
+	async uploadFiles(entries: SimpleFileEntry[], owner_id: number, parent_id: number | null): Promise<boolean> {
+		let share_id = null;
+		if (parent_id !== null) {
+			const file = await this.getFile(parent_id);
+			if (file) share_id = file.share_id;
+		}
+
+		const statement = "insert into files(owner_id, parent_id, share_id, is_directory, size, name) values($1, $2, $3, false, $4, $5);";
+		const queries: [string, any[]][] = entries.map(({name, size}) => [statement, [owner_id, parent_id, share_id, size, name]]);
+		const result = await this.DBService.transaction(queries);
+
+		return result.reduce((prev: boolean, cur: any) => prev === false ? false : cur !== null, true);
+	}
+
+	async uploadFilesAndFolders(entries: FileEntry[], owner_id: number, parent_id: number | null): Promise<boolean> {
+		const statement = "insert into files(owner_id, parent_id, share_id, size, name, is_directory) values($1, $2, $3, $4, $5, $6) returning id;";
+		const pathToId = new Map<string, (number | null)>();
+		pathToId.set("", parent_id);
+
+		let share_id = null;
+		if (parent_id !== null) {
+			const file = await this.getFile(parent_id);
+			if (file) share_id = file.share_id;
+		}
+
+		await this.DBService.query("begin;");
+		let isError = false;
+		for (let i = 0; i < entries.length; i++) {
+			const {size, name, path, is_directory} = entries[i];
+			const parent_id = path === null ? null : pathToId.get(path);
+
+			const res = await this.DBService.query(statement, [owner_id, parent_id, share_id, size, name, is_directory]);
+			if (res === null) {
+				await this.DBService.query("rollback;");
+				isError = true;
+				break;
+			}
+
+			if (is_directory) {
+				const key = path ? `${path}/${name}` : name;
+				pathToId.set(key, res[0].id);
+			}
+		}
+		if (!isError) await this.DBService.query("commit;");
+
+		return !isError;
 	}
 }

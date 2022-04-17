@@ -4,6 +4,8 @@ import {FileService} from "./file.service";
 import {AuthenticationMiddleware} from "../../middleware/authentication.middleware";
 import {UseMiddlewares} from "../../middleware/interceptorAsMiddleware";
 import {MiddlewareData} from "../../middleware/middlewareDataDecorator";
+import {UploadFilesAndFoldersArgs} from "./dto/uploadFilesAndFolders.args";
+import {UploadFilesArgs} from "./dto/uploadFiles.args";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
@@ -76,16 +78,26 @@ export class FileResolver {
 		return "download link";
 	}
 
-	@Mutation(returns => String)
-	async uploadLink(
-		@Args("parent_id", {type: () => Number}) parent_id: number,
-		@Args("size", {type: () => Number}) size: number,
-		@Args("type", {type: () => String}) type: string,
-		@Args("filename", {type: () => String}) filename: string,
+	@Mutation(returns => String, {nullable: true})
+	async uploadFiles(
+		@Args() {entries, parent_id}: UploadFilesArgs,
 		@MiddlewareData() {id: owner_id}: { id: number },
 	): Promise<string> {
-		// check access to parent_id
-		return "upload link";
+		const result = await this.fileService.uploadFiles(entries, owner_id, parent_id);
+		if (result === false) return null;
+
+		return "UPLOAD LINK";
+	}
+
+	@Mutation(returns => String)
+	async uploadFilesAndFolders(
+		@Args() {entries, parent_id}: UploadFilesAndFoldersArgs,
+		@MiddlewareData() {id: owner_id}: { id: number },
+	): Promise<string> {
+		const result = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);
+		if (result === false) return null;
+
+		return "UPLOAD LINK";
 	}
 
 	@Mutation(returns => Boolean)

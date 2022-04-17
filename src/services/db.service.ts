@@ -31,14 +31,14 @@ export class DBService {
 		await this.transaction([
 			[`create table if not exists files
 			(
-				id         serial       primary key,
-				parent_id  int,
-				share_id   int,
-				owner_id   int          not null,
-				type       varchar(10)  not null,
-				size       int          not null,
-				name       varchar(244) not null,
-				modified_at bigint       not null default (round(extract(epoch from now()) * 1000))
+				id           serial       primary key,
+				owner_id     int          not null,
+				parent_id    int,
+				share_id     int,
+				size         int          not null,
+				name         varchar(255) not null,
+				is_directory boolean      not null,
+				modified_at   bigint       not null default (round(extract(epoch from now()) * 1000))
 			);`],
 			[`create table if not exists share
 			(

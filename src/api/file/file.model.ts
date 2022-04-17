@@ -1,5 +1,5 @@
 import {Field, ObjectType} from "@nestjs/graphql";
-import {MaxLength, Min, MinLength} from "class-validator";
+import {MaxLength, Min} from "class-validator";
 
 @ObjectType()
 export class FileModel {
@@ -20,13 +20,11 @@ export class FileModel {
 	size: number;
 
 	@Field(type => String)
-	@MaxLength(244)
+	@MaxLength(255)
 	name: string;
 
-	@Field(type => String)
-	@MaxLength(10)
-	@MinLength(1)
-	type: string;
+	@Field(type => Boolean)
+	is_directory: boolean;
 
 	@Field(type => String)
 	modified_at: string;
