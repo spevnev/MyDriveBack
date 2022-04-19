@@ -9,8 +9,8 @@ export class FileModel {
 	@Field(type => Number)
 	owner_id: number;
 
-	@Field(type => Number, {nullable: true})
-	parent_id: number | null;
+	@Field(type => Number)
+	parent_id: number;
 
 	@Field(type => Number, {nullable: true})
 	share_id: number | null;

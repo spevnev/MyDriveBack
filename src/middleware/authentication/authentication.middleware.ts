@@ -1,7 +1,7 @@
 import {Injectable} from "@nestjs/common";
-import {InterceptorMiddleware} from "./interceptorAsMiddleware";
+import {InterceptorMiddleware} from "../interceptorAsMiddleware";
 import {Request} from "express";
-import {TokenService} from "../services/token.service";
+import {TokenService} from "../../services/token.service";
 
 @Injectable()
 export class AuthenticationMiddleware extends InterceptorMiddleware {

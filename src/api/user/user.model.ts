@@ -19,4 +19,12 @@ export class UserModel {
 	@Field(type => Number)
 	@Min(0)
 	space_used: number;
+
+	@Field(type => Number)
+	@Min(0)
+	drive_id: number;
+
+	@Field(type => Number)
+	@Min(0)
+	bin_id: number;
 }

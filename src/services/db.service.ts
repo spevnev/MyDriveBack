@@ -52,6 +52,8 @@ export class DBService {
     			id         serial      primary key,
     			username   varchar(32) unique not null,
     			password   varchar(60) not null,
+    			drive_id   int         unique,
+    			bin_id     int         unique,
     			space_used int         not null default 0
 			);`],
 		]);

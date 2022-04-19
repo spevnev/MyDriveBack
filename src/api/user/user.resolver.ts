@@ -5,7 +5,7 @@ import {HashService} from "../../services/hash.service";
 import {AuthenticationArgs} from "./dto/authentication.args";
 import {TokenService} from "../../services/token.service";
 import {AuthenticationReturn} from "./dto/authentication.return";
-import {AuthenticationMiddleware} from "../../middleware/authentication.middleware";
+import {AuthenticationMiddleware} from "../../middleware/authentication/authentication.middleware";
 import {UseMiddlewares} from "../../middleware/interceptorAsMiddleware";
 import {MiddlewareData} from "../../middleware/middlewareDataDecorator";
 
@@ -32,11 +32,12 @@ export class UserResolver {
 	): Promise<{ token: string } | { error: string }> {
 		const user: UserModel | null = await this.userService.getUser(username);
 		if (user === null) return {error: "Incorrect username and/or password!"};
+		const {id, drive_id, bin_id} = user;
 
 		const isPasswordCorrect = await this.hashService.compare(user.password, password);
 		if (!isPasswordCorrect) return {error: "Incorrect username and/or password!"};
 
-		const token = await this.tokenService.generateJWT({username, id: user.id});
+		const token = await this.tokenService.generateJWT({username, id, drive_id, bin_id});
 		return {token};
 	}
 
@@ -44,13 +45,13 @@ export class UserResolver {
 	async signup(
 		@Args({type: () => AuthenticationArgs}) {username, password}: AuthenticationArgs,
 	): Promise<{ token: string } | { error: string }> {
-		const user: UserModel | null = await this.userService.getUser(username);
-		if (user !== null) return {error: "This username is already taken!"};
+		const existingUser: UserModel | null = await this.userService.getUser(username);
+		if (existingUser !== null) return {error: "This username is already taken!"};
 
 		const hashedPassword = await this.hashService.hash(password);
-		const id: number = await this.userService.createUser({username, password: hashedPassword});
+		const {id, drive_id, bin_id} = await this.userService.createUser({username, password: hashedPassword});
 
-		const token = await this.tokenService.generateJWT({username, id});
+		const token = await this.tokenService.generateJWT({username, id, drive_id, bin_id});
 		return {token};
 	}
 }

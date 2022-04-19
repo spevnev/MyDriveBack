@@ -9,16 +9,29 @@ export class UserService {
 	) {}
 
 	async getUser(username: string): Promise<UserModel | null> {
-		const user = await this.DBService.query("select * from users where username = $1;", [username]);
+		const user = await this.DBService.query("select * from users where username = $1;", [username]) as [UserModel];
 		if (user.length !== 1) return null;
 
 		return user[0];
 	}
 
-	async createUser(user: { username: string, password: string }): Promise<number | null> {
-		const result = await this.DBService.query("insert into users(username, password) values($1, $2) returning id;", [user.username, user.password]);
-		if (!result[0]) return null;
+	async createUser(user: { username: string, password: string }): Promise<UserModel | null> {
+		try {
+			await this.DBService.query("begin;");
 
-		return result[0].id;
+			const maxUserId = await this.DBService.query("select max(id) as id from users;") as [{ id: number }];
+			const nextUserId = maxUserId[0].id + 1;
+
+			const driveId = await this.DBService.query("insert into files(owner_id, parent_id, share_id, is_directory, size, name) values($1, null, null, true, 0, 'Drive') returning id;", [nextUserId]) as [{ id: number }];
+			const binId = await this.DBService.query("insert into files(owner_id, parent_id, share_id, is_directory, size, name) values($1, null, null, true, 0, 'Bin') returning id;", [nextUserId]) as [{ id: number }];
+			const res = await this.DBService.query("insert into users(username, password, drive_id, bin_id) values($1, $2, $3, $4) returning *;", [user.username, user.password, driveId[0].id, binId[0].id]) as [UserModel];
+
+			await this.DBService.query("commit;");
+			return res[0];
+		} catch (e) {
+			await this.DBService.query("rollback;");
+			console.log(e);
+			return null;
+		}
 	}
 }

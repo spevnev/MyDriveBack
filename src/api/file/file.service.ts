@@ -34,19 +34,20 @@ export class FileService {
 		return await this.DBService.query("select * from files where parent_id = $1 and is_directory = true;", [parent_id]) as FileModel[];
 	}
 
-	async getEntriesInRoot(user_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id is null and owner_id = $1;", [user_id]) as FileModel[];
+	async getFoldersInFolderRecursively(parent_id: number): Promise<FileModel[]> {
+		return await this.DBService.query(`
+			with recursive directories as (
+			  select f.id, f.parent_id, f.name, 0 as depth from files f
+				where parent_id = $1
+			  union
+			  select f.id, f.parent_id, f.name, d.depth + 1 as depth from files f
+				inner join directories d on f.parent_id = d.id
+				where  is_directory = true
+			) select * from directories;
+		`, [parent_id]) as FileModel[];
 	}
 
-	async getFilesInRoot(user_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id is null and owner_id = $1 and is_directory = false;", [user_id]) as FileModel[];
-	}
-
-	async getFoldersInRoot(user_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id is null and owner_id = $1 and is_directory = true;", [user_id]) as FileModel[];
-	}
-
-	async getSharedFoldersInRoot(user_id: number): Promise<FileModel[]> {
+	async getRootSharedFolders(user_id: number): Promise<FileModel[]> {
 		return await this.DBService.query(`
 			with
 				sub as (select root_file from share as s where s.can_read_users @> $1),
@@ -78,12 +79,9 @@ export class FileService {
 		return await this.getSharePolicy(file.share_id, user_id);
 	}
 
-	async uploadFiles(entries: SimpleFileEntry[], owner_id: number, parent_id: number | null): Promise<boolean> {
-		let share_id = null;
-		if (parent_id !== null) {
-			const file = await this.getFile(parent_id);
-			if (file) share_id = file.share_id;
-		}
+	async uploadFiles(entries: SimpleFileEntry[], owner_id: number, parent_id: number): Promise<boolean> {
+		const file = await this.getFile(parent_id);
+		const share_id = file ? file.share_id : null;
 
 		const statement = "insert into files(owner_id, parent_id, share_id, is_directory, size, name) values($1, $2, $3, false, $4, $5);";
 		const queries: [string, any[]][] = entries.map(({name, size}) => [statement, [owner_id, parent_id, share_id, size, name]]);
@@ -92,16 +90,13 @@ export class FileService {
 		return result.reduce((prev: boolean, cur: any) => prev === false ? false : cur !== null, true);
 	}
 
-	async uploadFilesAndFolders(entries: FileEntry[], owner_id: number, parent_id: number | null): Promise<boolean> {
+	async uploadFilesAndFolders(entries: FileEntry[], owner_id: number, parent_id: number): Promise<boolean> {
 		const statement = "insert into files(owner_id, parent_id, share_id, size, name, is_directory) values($1, $2, $3, $4, $5, $6) returning id;";
 		const pathToId = new Map<string, (number | null)>();
 		pathToId.set("", parent_id);
 
-		let share_id = null;
-		if (parent_id !== null) {
-			const file = await this.getFile(parent_id);
-			if (file) share_id = file.share_id;
-		}
+		const file = await this.getFile(parent_id);
+		const share_id = file ? file.share_id : null;
 
 		await this.DBService.query("begin;");
 		let isError = false;
