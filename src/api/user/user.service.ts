@@ -2,6 +2,8 @@ import {Injectable} from "@nestjs/common";
 import {UserModel} from "./user.model";
 import {DBService} from "../../services/db.service";
 
+const GIGABYTE = 2 ** 30;
+
 @Injectable()
 export class UserService {
 	constructor(
@@ -13,6 +15,17 @@ export class UserService {
 		if (user.length !== 1) return null;
 
 		return user[0];
+	}
+
+	async getFreeSpace(id: number): Promise<number | null> {
+		const user = await this.DBService.query("select * from users where id = $1;", [id]) as [UserModel];
+		if (user.length !== 1) return null;
+
+		return GIGABYTE - user[0].space_used;
+	}
+
+	async increaseUsedSpace(id: number, size: number): Promise<void> {
+		await this.DBService.query("update users set space_used = (select space_used from users where id = $1) + $2 where id = $1;", [id, size]);
 	}
 
 	async createUser(user: { username: string, password: string }): Promise<UserModel | null> {

@@ -7,12 +7,14 @@ import {MiddlewareData} from "../../middleware/middlewareDataDecorator";
 import {UploadFilesAndFoldersArgs} from "./dto/uploadFilesAndFolders.args";
 import {UploadFilesArgs} from "./dto/uploadFiles.args";
 import {UserData} from "../../middleware/authentication/user.data";
+import {UserService} from "../user/user.service";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
 export class FileResolver {
 	constructor(
 		private fileService: FileService,
+		private userService: UserService,
 	) {}
 
 	@Query(returns => FileModel, {nullable: true})
@@ -88,8 +90,12 @@ export class FileResolver {
 	async uploadFiles(
 		@Args() {entries, parent_id}: UploadFilesArgs,
 		@MiddlewareData() {id: owner_id, drive_id}: UserData,
-	): Promise<string> {
+	): Promise<string | null> {
 		parent_id = parent_id || drive_id;
+
+		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
+		const free_space = await this.userService.getFreeSpace(owner_id);
+		if (size > free_space) return null;
 
 		const result = await this.fileService.uploadFiles(entries, owner_id, parent_id);
 		if (result === false) return null;
@@ -101,8 +107,13 @@ export class FileResolver {
 	async uploadFilesAndFolders(
 		@Args() {entries, parent_id}: UploadFilesAndFoldersArgs,
 		@MiddlewareData() {id: owner_id, drive_id}: UserData,
-	): Promise<string> {
+	): Promise<string | null> {
 		parent_id = parent_id || drive_id;
+
+		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
+		const free_space = await this.userService.getFreeSpace(owner_id);
+		if (size > free_space) return null;
+		await this.userService.increaseUsedSpace(owner_id, size);
 
 		const result = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);
 		if (result === false) return null;
