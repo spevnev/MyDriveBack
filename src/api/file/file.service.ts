@@ -3,21 +3,17 @@ import {DBService} from "../../services/db.service";
 import {FileModel} from "./file.model";
 import {SimpleFileEntry} from "./dto/uploadFiles.args";
 import {FileEntry} from "./dto/uploadFilesAndFolders.args";
+import {UserService} from "../user/user.service";
 
 @Injectable()
 export class FileService {
 	constructor(
 		private DBService: DBService,
+		private userService: UserService,
 	) {}
 
 	async getFile(id: number): Promise<FileModel | null> {
 		const result = await this.DBService.query("select * from files where id = $1;", [id]) as [FileModel?];
-		if (result.length !== 1) return null;
-		return result[0];
-	}
-
-	async getRootFile(user_id: number): Promise<FileModel | null> {
-		const result = await this.DBService.query("select * from files where owner_id = $1 and parent_id is null;", [user_id]) as [FileModel?];
 		if (result.length !== 1) return null;
 		return result[0];
 	}
@@ -58,6 +54,29 @@ export class FileService {
 		`, [[user_id]]) as FileModel[];
 	}
 
+	async canUpload(owner_id, parent_id, entries: SimpleFileEntry[], size: number): Promise<boolean> {
+		const permissions = await this.hasAccess(owner_id, parent_id);
+		if (permissions === null || permissions.canEdit === false) return false;
+
+		const free_space = await this.userService.getFreeSpace(owner_id);
+		if (size > free_space) return false;
+
+		const names = entries.map(entry => entry.name);
+		const hasCollisions = await this.doFilesCollide(names, parent_id);
+		if (hasCollisions) return false;
+
+		return true;
+	}
+
+	async doFilesCollide(names: string[], parent_id: number | null): Promise<boolean> {
+		const result = await this.DBService.query("select count(1) from files where parent_id = $1 and name = any($2);", [parent_id, names]) as [{ count: number }?];
+		if (result.length === 0) return true;
+
+		const count = Number(result[0].count);
+		if (isNaN(count)) return true;
+		return count !== 0;
+	}
+
 	async getSharePolicy(share_id: number, user_id: number): Promise<{ canEdit: boolean } | null> {
 		const result = await this.DBService.query("select * from share where id = $1;", [share_id]) as [{ id: number, can_edit_users: number[], can_read_users: number[] }?];
 		if (result.length === 0) return null;
@@ -68,11 +87,10 @@ export class FileService {
 		return null;
 	}
 
-	async hasAccess(user_id: number, parent_id: number | null, share_id?: number): Promise<{ canEdit: boolean } | null> {
+	async hasAccess(user_id: number, parent_id: number, share_id?: number): Promise<{ canEdit: boolean } | null> {
 		if (share_id) return await this.getSharePolicy(share_id, user_id);
-		if (parent_id === null && share_id === undefined) return {canEdit: true};
 
-		const file = !parent_id ? await this.getRootFile(user_id) : await this.getFile(parent_id);
+		const file = await this.getFile(parent_id);
 		if (file === null) return null;
 		if (file.owner_id === user_id) return {canEdit: true};
 

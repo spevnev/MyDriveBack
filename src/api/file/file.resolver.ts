@@ -82,7 +82,6 @@ export class FileResolver {
 	async downloadLink(
 		@Args("id", {type: () => Number}) id: number,
 	): Promise<string> {
-		// check access
 		return "download link";
 	}
 
@@ -94,8 +93,8 @@ export class FileResolver {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
-		const free_space = await this.userService.getFreeSpace(owner_id);
-		if (size > free_space) return null;
+		if (!await this.fileService.canUpload(owner_id, parent_id, entries, size)) return null;
+		await this.userService.increaseUsedSpace(owner_id, size);
 
 		const result = await this.fileService.uploadFiles(entries, owner_id, parent_id);
 		if (result === false) return null;
@@ -103,7 +102,7 @@ export class FileResolver {
 		return "UPLOAD LINK";
 	}
 
-	@Mutation(returns => String)
+	@Mutation(returns => String, {nullable: true})
 	async uploadFilesAndFolders(
 		@Args() {entries, parent_id}: UploadFilesAndFoldersArgs,
 		@MiddlewareData() {id: owner_id, drive_id}: UserData,
@@ -111,8 +110,7 @@ export class FileResolver {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
-		const free_space = await this.userService.getFreeSpace(owner_id);
-		if (size > free_space) return null;
+		if (!await this.fileService.canUpload(owner_id, parent_id, entries, size)) return null;
 		await this.userService.increaseUsedSpace(owner_id, size);
 
 		const result = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);
