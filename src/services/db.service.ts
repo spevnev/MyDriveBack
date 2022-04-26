@@ -62,7 +62,7 @@ export class DBService {
 	async createIndexes(): Promise<void> {
 		await this.transaction([
 			[`create index if not exists files_parent_idx    on files  (parent_id);`],
-			[`create index if not exists files_owner_idx     on files (owner_id);  `],
+			[`create index if not exists files_owner_idx     on files  (owner_id); `],
 			[`create index if not exists users_username_idx on users (username); `],
 		]);
 	}

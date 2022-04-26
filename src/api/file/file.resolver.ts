@@ -110,7 +110,7 @@ export class FileResolver {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
-		if (!await this.fileService.canUpload(owner_id, parent_id, entries, size)) return null;
+		if (!await this.fileService.canUpload(owner_id, parent_id, entries.filter(entry => entry.path === ""), size)) return null;
 		await this.userService.increaseUsedSpace(owner_id, size);
 
 		const result = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);

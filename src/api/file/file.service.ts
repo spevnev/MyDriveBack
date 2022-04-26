@@ -54,29 +54,6 @@ export class FileService {
 		`, [[user_id]]) as FileModel[];
 	}
 
-	async canUpload(owner_id, parent_id, entries: SimpleFileEntry[], size: number): Promise<boolean> {
-		const permissions = await this.hasAccess(owner_id, parent_id);
-		if (permissions === null || permissions.canEdit === false) return false;
-
-		const free_space = await this.userService.getFreeSpace(owner_id);
-		if (size > free_space) return false;
-
-		const names = entries.map(entry => entry.name);
-		const hasCollisions = await this.doFilesCollide(names, parent_id);
-		if (hasCollisions) return false;
-
-		return true;
-	}
-
-	async doFilesCollide(names: string[], parent_id: number | null): Promise<boolean> {
-		const result = await this.DBService.query("select count(1) from files where parent_id = $1 and name = any($2);", [parent_id, names]) as [{ count: number }?];
-		if (result.length === 0) return true;
-
-		const count = Number(result[0].count);
-		if (isNaN(count)) return true;
-		return count !== 0;
-	}
-
 	async getSharePolicy(share_id: number, user_id: number): Promise<{ canEdit: boolean } | null> {
 		const result = await this.DBService.query("select * from share where id = $1;", [share_id]) as [{ id: number, can_edit_users: number[], can_read_users: number[] }?];
 		if (result.length === 0) return null;
@@ -95,6 +72,29 @@ export class FileService {
 		if (file.owner_id === user_id) return {canEdit: true};
 
 		return await this.getSharePolicy(file.share_id, user_id);
+	}
+
+	async doFilesCollide(names: string[], parent_id: number): Promise<boolean> {
+		const result = await this.DBService.query("select count(1) from files where parent_id = $1 and name = any($2);", [parent_id, names]) as [{ count: number }?];
+		if (result.length === 0) return true;
+
+		const count = Number(result[0].count);
+		if (isNaN(count)) return true;
+		return count !== 0;
+	}
+
+	async canUpload(owner_id: number, parent_id: number, topLevelEntries: SimpleFileEntry[], size: number): Promise<boolean> {
+		const permissions = await this.hasAccess(owner_id, parent_id);
+		if (permissions === null || permissions.canEdit === false) return false;
+
+		const free_space = await this.userService.getFreeSpace(owner_id);
+		if (size > free_space) return false;
+
+		const names = topLevelEntries.map(entry => entry.name);
+		const hasCollisions = await this.doFilesCollide(names, parent_id);
+		if (hasCollisions) return false;
+
+		return true;
 	}
 
 	async uploadFiles(entries: SimpleFileEntry[], owner_id: number, parent_id: number): Promise<boolean> {
