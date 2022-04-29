@@ -1,11 +1,15 @@
 import {Field, ObjectType} from "@nestjs/graphql";
-import {Min, MinLength} from "class-validator";
+import {IsOptional, Min, MinLength} from "class-validator";
 
 @ObjectType()
 export class SimpleFileEntry {
 	@Field(type => String)
 	@MinLength(1)
 	name: string;
+
+	@Field(type => String, {nullable: true})
+	@IsOptional()
+	newName?: string;
 
 	@Field(type => Number)
 	@Min(0)

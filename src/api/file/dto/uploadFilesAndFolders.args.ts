@@ -1,9 +1,9 @@
 import {ArgsType, Field, InputType} from "@nestjs/graphql";
 import {MinLength} from "class-validator";
-import {SimpleFileEntry} from "./uploadFiles.args";
+import {SimpleFileEntryInput} from "./uploadFiles.args";
 
 @InputType()
-export class FileEntry extends SimpleFileEntry {
+export class FileEntry extends SimpleFileEntryInput {
 	@Field(type => String)
 	@MinLength(1)
 	path: string | null;

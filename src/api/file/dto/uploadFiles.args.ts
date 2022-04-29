@@ -1,21 +1,28 @@
 import {ArgsType, Field, InputType} from "@nestjs/graphql";
-import {Min, MinLength} from "class-validator";
+import {IsOptional, Min, MinLength} from "class-validator";
 
 @InputType()
-export class SimpleFileEntry {
+export class SimpleFileEntryInput {
 	@Field(type => String)
 	@MinLength(1)
 	name: string;
 
+	@Field(type => String, {nullable: true})
+	@IsOptional()
+	newName?: string;
+
 	@Field(type => Number)
 	@Min(0)
 	size: number;
+
+	@Field(type => String, {nullable: true})
+	type: string | null;
 }
 
 @ArgsType()
 export class UploadFilesArgs {
-	@Field(type => [SimpleFileEntry])
-	entries: SimpleFileEntry[];
+	@Field(type => [SimpleFileEntryInput])
+	entries: SimpleFileEntryInput[];
 
 	@Field(type => Number, {nullable: true})
 	parent_id: number | null;
