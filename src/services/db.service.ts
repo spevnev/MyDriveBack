@@ -1,15 +1,13 @@
 import {Injectable} from "@nestjs/common";
 import {Pool, QueryResult} from "pg";
 
-const CONNECTION_STRING = "postgresql://root:root@localhost:5432/mydrive";
-
 @Injectable()
 export class DBService {
-	private client: Pool;
+	private readonly client: Pool;
 
 	constructor() {
 		this.client = new Pool({
-			connectionString: CONNECTION_STRING,
+			connectionString: process.env.DB_CONNECTION_STRING,
 			max: 20,
 		});
 
@@ -24,7 +22,7 @@ export class DBService {
 
 	async testConnection(): Promise<void> {
 		const res = await this.query("select now()");
-		if (res === null) throw new Error(`Couldn't connect to DB using:  ${CONNECTION_STRING}`);
+		if (res === null) throw new Error(`Couldn't connect to DB using: ${process.env.DB_CONNECTION_STRING}`);
 	}
 
 	async createTables(): Promise<void> {

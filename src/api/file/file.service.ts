@@ -19,15 +19,15 @@ export class FileService {
 		return result[0];
 	}
 
-	async getEntriesInFolder(parent_id: number): Promise<FileModel[]> {
+	async getEntries(parent_id: number): Promise<FileModel[]> {
 		return await this.DBService.query("select * from files where parent_id = $1;", [parent_id]) as FileModel[];
 	}
 
-	async getFilesInFolder(parent_id: number): Promise<FileModel[]> {
+	async getFiles(parent_id: number): Promise<FileModel[]> {
 		return await this.DBService.query("select * from files where parent_id = $1 and is_directory = false;", [parent_id]) as FileModel[];
 	}
 
-	async getFoldersInFolder(parent_id: number): Promise<FileModel[]> {
+	async getFolders(parent_id: number): Promise<FileModel[]> {
 		return await this.DBService.query("select * from files where parent_id = $1 and is_directory = true;", [parent_id]) as FileModel[];
 	}
 
@@ -35,7 +35,7 @@ export class FileService {
 		return await this.DBService.query(`
 			with recursive directories as (
 			  select f.id, f.parent_id, f.name, 0 as depth from files f
-				where parent_id = $1
+				where parent_id = $1 and is_directory = true
 			  union
 			  select f.id, f.parent_id, f.name, d.depth + 1 as depth from files f
 				inner join directories d on f.parent_id = d.id
@@ -92,13 +92,13 @@ export class FileService {
 		if (size > free_space) return false;
 
 		if (topLevelEntries[0] instanceof FileEntry) {
-			const fileNames = topLevelEntries.map(entry => !entry.is_directory ? entry.name : null).filter(entry => entry !== null);
+			const fileNames = topLevelEntries.map(entry => !entry.is_directory ? entry.newName || entry.name : null).filter(entry => entry !== null);
 			const hasFileCollisions = await this.doFilesCollide(fileNames, parent_id, false);
-			const folderNames = topLevelEntries.map(entry => entry.is_directory ? entry.name : null).filter(entry => entry !== null);
+			const folderNames = topLevelEntries.map(entry => entry.is_directory ? entry.newName || entry.name : null).filter(entry => entry !== null);
 			const hasFolderCollisions = await this.doFilesCollide(folderNames, parent_id, true);
 			if (hasFileCollisions || hasFolderCollisions) return false;
 		} else {
-			const names = topLevelEntries.map(entry => entry.name);
+			const names = topLevelEntries.map(entry => entry.newName || entry.name);
 			const hasFileCollisions = await this.doFilesCollide(names, parent_id, false);
 			if (hasFileCollisions) return false;
 		}
@@ -106,20 +106,23 @@ export class FileService {
 		return true;
 	}
 
-	async uploadFiles(entries: SimpleFileEntryInput[], owner_id: number, parent_id: number): Promise<boolean> {
+	async uploadFiles(entries: SimpleFileEntryInput[], owner_id: number, parent_id: number): Promise<Map<string, number> | null> {
 		const file = await this.getFile(parent_id);
 		const share_id = file ? file.share_id : null;
 
-		const statement = "insert into files(owner_id, parent_id, share_id, is_directory, size, name) values($1, $2, $3, false, $4, $5);";
+		const statement = "insert into files(owner_id, parent_id, share_id, is_directory, size, name) values($1, $2, $3, false, $4, $5) returning name, id;";
 		const queries: [string, any[]][] = entries.map(entry => [statement, [owner_id, parent_id, share_id, entry.size, entry.newName || entry.name]]);
-		const result = await this.DBService.transaction(queries);
+		const result = await this.DBService.transaction(queries) as [{ name: string, id: number }][];
 
-		return result.reduce((prev: boolean, cur: any) => prev === false ? false : cur !== null, true);
+		const map = new Map<string, number>();
+		result.forEach(result => map.set(result[0].name, result[0].id));
+
+		return map;
 	}
 
-	async uploadFilesAndFolders(entries: FileEntry[], owner_id: number, parent_id: number): Promise<boolean> {
+	async uploadFilesAndFolders(entries: FileEntry[], owner_id: number, parent_id: number): Promise<Map<string, number> | null> {
 		const statement = "insert into files(owner_id, parent_id, share_id, size, name, is_directory) values($1, $2, $3, $4, $5, $6) returning id;";
-		const pathToId = new Map<string, (number | null)>();
+		const pathToId = new Map<string, (number | undefined)>();
 		pathToId.set("", parent_id);
 
 		const file = await this.getFile(parent_id);
@@ -140,11 +143,13 @@ export class FileService {
 
 			if (is_directory) {
 				const key = path ? `${path}/${name}` : name;
-				pathToId.set(key, res[0].id);
+				const id = res[0].id;
+
+				pathToId.set(key, id);
 			}
 		}
 		if (!isError) await this.DBService.query("commit;");
 
-		return !isError;
+		return isError ? null : pathToId;
 	}
 }

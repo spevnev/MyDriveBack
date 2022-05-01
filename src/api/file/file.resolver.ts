@@ -8,11 +8,14 @@ import {UploadFilesAndFoldersArgs} from "./dto/uploadFilesAndFolders.args";
 import {UploadFilesArgs} from "./dto/uploadFiles.args";
 import {UserData} from "../../middleware/authentication/user.data";
 import {UserService} from "../user/user.service";
+import {S3Service} from "../../services/s3.service";
+import {PresignedURL} from "./dto/presignedURL";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
 export class FileResolver {
 	constructor(
+		private S3Service: S3Service,
 		private fileService: FileService,
 		private userService: UserService,
 	) {}
@@ -40,7 +43,7 @@ export class FileResolver {
 		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
 		if (hasAccess === null) return null;
 
-		return await this.fileService.getEntriesInFolder(parent_id);
+		return await this.fileService.getEntries(parent_id);
 	}
 
 	@Query(returns => [FileModel], {nullable: true})
@@ -53,7 +56,7 @@ export class FileResolver {
 		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
 		if (hasAccess === null) return null;
 
-		await this.fileService.getFilesInFolder(parent_id);
+		return await this.fileService.getFiles(parent_id);
 	}
 
 	@Query(returns => [FileModel], {nullable: true})
@@ -68,7 +71,7 @@ export class FileResolver {
 		if (hasAccess === null) return null;
 
 		if (recursively) return this.fileService.getFoldersInFolderRecursively(parent_id);
-		return await this.fileService.getFoldersInFolder(parent_id);
+		return await this.fileService.getFolders(parent_id);
 	}
 
 	@Query(returns => [FileModel], {nullable: true})
@@ -96,27 +99,28 @@ export class FileResolver {
 		if (!await this.fileService.canUpload(owner_id, parent_id, entries, size)) return null;
 		await this.userService.increaseUsedSpace(owner_id, size);
 
-		const result = await this.fileService.uploadFiles(entries, owner_id, parent_id);
-		if (result === false) return null;
+		const ids = await this.fileService.uploadFiles(entries, owner_id, parent_id);
+		if (ids === null) return null;
 
 		return "UPLOAD LINK";
 	}
 
-	@Mutation(returns => String, {nullable: true})
+	@Mutation(returns => PresignedURL, {nullable: true})
 	async uploadFilesAndFolders(
 		@Args() {entries, parent_id}: UploadFilesAndFoldersArgs,
 		@MiddlewareData() {id: owner_id, drive_id}: UserData,
-	): Promise<string | null> {
+	): Promise<PresignedURL | null> {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
 		if (!await this.fileService.canUpload(owner_id, parent_id, entries.filter(entry => entry.path === ""), size)) return null;
 		await this.userService.increaseUsedSpace(owner_id, size);
 
-		const result = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);
-		if (result === false) return null;
+		const ids = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);
+		if (ids === null) return null;
 
-		return "UPLOAD LINK";
+		const [url, options] = await this.S3Service.createPresignedPostURL(owner_id, ids.get(entries[0].path), entries[0].size);
+		return {url, options};
 	}
 
 	@Mutation(returns => Boolean)
