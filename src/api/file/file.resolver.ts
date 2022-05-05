@@ -9,7 +9,7 @@ import {UploadFilesArgs} from "./dto/uploadFiles.args";
 import {UserData} from "../../middleware/authentication/user.data";
 import {UserService} from "../user/user.service";
 import {S3Service} from "../../services/s3.service";
-import {PresignedURL} from "./dto/presignedURL";
+import {PresignedURLMap} from "./dto/presignedURL";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
@@ -88,11 +88,11 @@ export class FileResolver {
 		return "download link";
 	}
 
-	@Mutation(returns => String, {nullable: true})
+	@Mutation(returns => [PresignedURLMap], {nullable: true})
 	async uploadFiles(
 		@Args() {entries, parent_id}: UploadFilesArgs,
 		@MiddlewareData() {id: owner_id, drive_id}: UserData,
-	): Promise<string | null> {
+	): Promise<PresignedURLMap[] | null> {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
@@ -102,25 +102,40 @@ export class FileResolver {
 		const ids = await this.fileService.uploadFiles(entries, owner_id, parent_id);
 		if (ids === null) return null;
 
-		return "UPLOAD LINK";
+		const urls: PresignedURLMap[] = [];
+		for (let i = 0; i < entries.length; i++) {
+			const {size, name, newName} = entries[i];
+
+			const url = await this.S3Service.createPresignedPostURL(owner_id, ids.get(newName || name), size);
+			urls.push({path: newName || name, url});
+		}
+		return urls;
 	}
 
-	@Mutation(returns => PresignedURL, {nullable: true})
+	@Mutation(returns => [PresignedURLMap], {nullable: true})
 	async uploadFilesAndFolders(
 		@Args() {entries, parent_id}: UploadFilesAndFoldersArgs,
 		@MiddlewareData() {id: owner_id, drive_id}: UserData,
-	): Promise<PresignedURL | null> {
+	): Promise<PresignedURLMap[] | null> {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
-		if (!await this.fileService.canUpload(owner_id, parent_id, entries.filter(entry => entry.path === ""), size)) return null;
+		const topLevelEntries = entries.filter(entry => entry.path === "");
+		if (!await this.fileService.canUpload(owner_id, parent_id, topLevelEntries, size)) return null;
 		await this.userService.increaseUsedSpace(owner_id, size);
 
 		const ids = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);
 		if (ids === null) return null;
 
-		const [url, options] = await this.S3Service.createPresignedPostURL(owner_id, ids.get(entries[0].path), entries[0].size);
-		return {url, options};
+		const urls: PresignedURLMap[] = [];
+		for (let i = 0; i < entries.length; i++) {
+			const {path, size, name} = entries[i];
+			const newPath = path ? `${path}/${name}` : name;
+
+			const url = await this.S3Service.createPresignedPostURL(owner_id, ids.get(newPath), size);
+			urls.push({path: newPath, url});
+		}
+		return urls;
 	}
 
 	@Mutation(returns => Boolean)

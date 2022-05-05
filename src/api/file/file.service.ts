@@ -141,12 +141,9 @@ export class FileService {
 				break;
 			}
 
-			if (is_directory) {
-				const key = path ? `${path}/${name}` : name;
-				const id = res[0].id;
-
-				pathToId.set(key, id);
-			}
+			const key = path ? `${path}/${name}` : name;
+			const id = res[0].id;
+			pathToId.set(key, id);
 		}
 		if (!isError) await this.DBService.query("commit;");
 
