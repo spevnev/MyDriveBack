@@ -13,7 +13,7 @@ export class FileService {
 		private userService: UserService,
 	) {}
 
-	async getFile(id: number): Promise<FileModel | null> {
+	async getEntry(id: number): Promise<FileModel | null> {
 		const result = await this.DBService.query("select * from files where id = $1;", [id]) as [FileModel?];
 		if (result.length !== 1) return null;
 		return result[0];
@@ -55,6 +55,7 @@ export class FileService {
 		`, [[user_id]]) as FileModel[];
 	}
 
+
 	async getSharePolicy(share_id: number, user_id: number): Promise<{ canEdit: boolean } | null> {
 		const result = await this.DBService.query("select * from share where id = $1;", [share_id]) as [{ id: number, can_edit_users: number[], can_read_users: number[] }?];
 		if (result.length === 0) return null;
@@ -68,7 +69,7 @@ export class FileService {
 	async hasAccess(user_id: number, parent_id: number, share_id?: number): Promise<{ canEdit: boolean } | null> {
 		if (share_id) return await this.getSharePolicy(share_id, user_id);
 
-		const file = await this.getFile(parent_id);
+		const file = await this.getEntry(parent_id);
 		if (file === null) return null;
 		if (file.owner_id === user_id) return {canEdit: true};
 
@@ -106,33 +107,34 @@ export class FileService {
 		return true;
 	}
 
-	async uploadFiles(entries: SimpleFileEntryInput[], owner_id: number, parent_id: number): Promise<Map<string, number> | null> {
-		const file = await this.getFile(parent_id);
+
+	async uploadFiles(entries: SimpleFileEntryInput[], owner_id: number, parent_id: number): Promise<Map<string, [number, number]> | null> {
+		const file = await this.getEntry(parent_id);
 		const share_id = file ? file.share_id : null;
 
 		const statement = "insert into files(owner_id, parent_id, share_id, is_directory, size, name) values($1, $2, $3, false, $4, $5) returning name, id;";
 		const queries: [string, any[]][] = entries.map(entry => [statement, [owner_id, parent_id, share_id, entry.size, entry.newName || entry.name]]);
 		const result = await this.DBService.transaction(queries) as [{ name: string, id: number }][];
 
-		const map = new Map<string, number>();
-		result.forEach(result => map.set(result[0].name, result[0].id));
+		const map = new Map<string, [number, number]>();
+		result.forEach(result => map.set(result[0].name, [result[0].id, parent_id]));
 
 		return map;
 	}
 
-	async uploadFilesAndFolders(entries: FileEntry[], owner_id: number, parent_id: number): Promise<Map<string, number> | null> {
+	async uploadFilesAndFolders(entries: FileEntry[], owner_id: number, parent_id: number): Promise<Map<string, [number, number]> | null> {
 		const statement = "insert into files(owner_id, parent_id, share_id, size, name, is_directory) values($1, $2, $3, $4, $5, $6) returning id;";
-		const pathToId = new Map<string, (number | undefined)>();
-		pathToId.set("", parent_id);
+		const pathToId = new Map<string, [number, number]>();
+		pathToId.set("", [parent_id, parent_id]);
 
-		const file = await this.getFile(parent_id);
+		const file = await this.getEntry(parent_id);
 		const share_id = file ? file.share_id : null;
 
 		await this.DBService.query("begin;");
 		let isError = false;
 		for (let i = 0; i < entries.length; i++) {
 			const {size, name, newName, path, is_directory} = entries[i];
-			const parent_id = path === null ? null : pathToId.get(path);
+			const parent_id = path === null ? null : pathToId.get(path)[0];
 
 			const res = await this.DBService.query(statement, [owner_id, parent_id, share_id, size, newName || name, is_directory]);
 			if (res === null) {
@@ -143,10 +145,18 @@ export class FileService {
 
 			const key = path ? `${path}/${name}` : name;
 			const id = res[0].id;
-			pathToId.set(key, id);
+			pathToId.set(key, [id, parent_id]);
 		}
 		if (!isError) await this.DBService.query("commit;");
 
 		return isError ? null : pathToId;
+	}
+
+	async createFolder(parent_id: number, user_id: number, name: string): Promise<boolean> {
+		const entry = await this.getEntry(parent_id);
+		const share_id = entry ? entry.share_id : null;
+
+		const res = await this.DBService.query("insert into files(owner_id, parent_id, share_id, is_directory, size, name) values ($1, $2, $3, true, 0, $4)", [user_id, parent_id, share_id, name]);
+		return res !== null;
 	}
 }

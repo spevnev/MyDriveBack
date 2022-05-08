@@ -9,7 +9,7 @@ import {UploadFilesArgs} from "./dto/uploadFiles.args";
 import {UserData} from "../../middleware/authentication/user.data";
 import {UserService} from "../user/user.service";
 import {S3Service} from "../../services/s3.service";
-import {PresignedURLMap} from "./dto/presignedURL";
+import {UploadFilesReturn} from "./dto/uploadFiles.return";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
@@ -20,12 +20,13 @@ export class FileResolver {
 		private userService: UserService,
 	) {}
 
+
 	@Query(returns => FileModel, {nullable: true})
 	async file(
 		@Args("id", {type: () => Number}) id: number,
 		@MiddlewareData() {id: user_id}: { id: number },
 	): Promise<FileModel | null> {
-		const file: FileModel | null = await this.fileService.getFile(id);
+		const file: FileModel | null = await this.fileService.getEntry(id);
 		if (file === null) return null;
 
 		const isShared: object | null = await this.fileService.hasAccess(user_id, null, file.share_id);
@@ -81,18 +82,12 @@ export class FileResolver {
 		return await this.fileService.getRootSharedFolders(user_id);
 	}
 
-	@Query(returns => String)
-	async downloadLink(
-		@Args("id", {type: () => Number}) id: number,
-	): Promise<string> {
-		return "download link";
-	}
 
-	@Mutation(returns => [PresignedURLMap], {nullable: true})
+	@Mutation(returns => [UploadFilesReturn], {nullable: true})
 	async uploadFiles(
 		@Args() {entries, parent_id}: UploadFilesArgs,
 		@MiddlewareData() {id: owner_id, drive_id}: UserData,
-	): Promise<PresignedURLMap[] | null> {
+	): Promise<UploadFilesReturn[] | null> {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
@@ -102,21 +97,23 @@ export class FileResolver {
 		const ids = await this.fileService.uploadFiles(entries, owner_id, parent_id);
 		if (ids === null) return null;
 
-		const urls: PresignedURLMap[] = [];
-		for (let i = 0; i < entries.length; i++) {
-			const {size, name, newName} = entries[i];
+		const res = entries.map(async ({size, name, newName}) => {
+			const newPath = newName || name;
+			const [id, parent_id] = ids.get(newPath);
 
-			const url = await this.S3Service.createPresignedPostURL(owner_id, ids.get(newName || name), size);
-			urls.push({path: newName || name, url});
-		}
-		return urls;
+			const url = await this.S3Service.createPresignedPostURL(owner_id, id, size);
+
+			return {path: newPath, url, id, parent_id};
+		});
+
+		return await Promise.all(res);
 	}
 
-	@Mutation(returns => [PresignedURLMap], {nullable: true})
+	@Mutation(returns => [UploadFilesReturn], {nullable: true})
 	async uploadFilesAndFolders(
 		@Args() {entries, parent_id}: UploadFilesAndFoldersArgs,
 		@MiddlewareData() {id: owner_id, drive_id}: UserData,
-	): Promise<PresignedURLMap[] | null> {
+	): Promise<UploadFilesReturn[] | null> {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
@@ -127,15 +124,41 @@ export class FileResolver {
 		const ids = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);
 		if (ids === null) return null;
 
-		const urls: PresignedURLMap[] = [];
-		for (let i = 0; i < entries.length; i++) {
-			const {path, size, name} = entries[i];
+		const res = entries.map(async ({path, size, name}) => {
 			const newPath = path ? `${path}/${name}` : name;
+			const [id, parent_id] = ids.get(newPath);
 
-			const url = await this.S3Service.createPresignedPostURL(owner_id, ids.get(newPath), size);
-			urls.push({path: newPath, url});
-		}
-		return urls;
+			const url = await this.S3Service.createPresignedPostURL(owner_id, id, size);
+
+			return {path: newPath, url, id, parent_id};
+		});
+
+		return await Promise.all(res);
+	}
+
+	@Mutation(returns => Boolean)
+	async createFolder(
+		@Args("parent_id", {type: () => Number, nullable: true}) parent_id: number | null,
+		@Args("name", {type: () => String}) name: string,
+		@MiddlewareData() {id: user_id, drive_id}: UserData,
+	): Promise<boolean> {
+		parent_id = parent_id || drive_id;
+
+		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
+		if (!hasAccess) return false;
+
+		const hasCollisions = await this.fileService.doFilesCollide([name], parent_id, true);
+		if (hasCollisions) return false;
+
+		return await this.fileService.createFolder(parent_id, user_id, name);
+	}
+
+
+	@Query(returns => String)
+	async downloadLink(
+		@Args("id", {type: () => Number}) id: number,
+	): Promise<string> {
+		return "download link";
 	}
 
 	@Mutation(returns => Boolean)

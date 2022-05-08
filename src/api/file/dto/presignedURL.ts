@@ -32,12 +32,3 @@ export class PresignedURL {
 	@Field(type => String)
 	url: string;
 }
-
-@ObjectType()
-export class PresignedURLMap {
-	@Field(type => String)
-	path: string;
-
-	@Field(type => PresignedURL)
-	url: PresignedURL;
-}
