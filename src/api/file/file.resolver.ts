@@ -136,19 +136,19 @@ export class FileResolver {
 		return await Promise.all(res);
 	}
 
-	@Mutation(returns => Boolean)
+	@Mutation(returns => Number)
 	async createFolder(
 		@Args("parent_id", {type: () => Number, nullable: true}) parent_id: number | null,
 		@Args("name", {type: () => String}) name: string,
 		@MiddlewareData() {id: user_id, drive_id}: UserData,
-	): Promise<boolean> {
+	): Promise<number | null> {
 		parent_id = parent_id || drive_id;
 
 		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
-		if (!hasAccess) return false;
+		if (!hasAccess) return null;
 
 		const hasCollisions = await this.fileService.doFilesCollide([name], parent_id, true);
-		if (hasCollisions) return false;
+		if (hasCollisions) return null;
 
 		return await this.fileService.createFolder(parent_id, user_id, name);
 	}

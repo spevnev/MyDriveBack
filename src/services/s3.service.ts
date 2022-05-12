@@ -42,7 +42,18 @@ export class S3Service {
 		};
 
 		try {
-			const {url, fields} = await this.client.createPresignedPost(params);
+			// TODO: disabled due to free tier limitation
+			// const {url, fields} = await this.client.createPresignedPost(params);
+			const url = "sample url";
+			const fields = {
+				bucket: "1",
+				key: "1",
+				Policy: "1",
+				"X-Amz-Algorithm": "1",
+				"X-Amz-Date": "1",
+				"X-Amz-Credential": "1",
+				"X-Amz-Signature": "1",
+			};
 
 			return {
 				url,

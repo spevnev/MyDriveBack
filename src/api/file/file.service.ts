@@ -152,11 +152,11 @@ export class FileService {
 		return isError ? null : pathToId;
 	}
 
-	async createFolder(parent_id: number, user_id: number, name: string): Promise<boolean> {
+	async createFolder(parent_id: number, user_id: number, name: string): Promise<number | null> {
 		const entry = await this.getEntry(parent_id);
 		const share_id = entry ? entry.share_id : null;
 
-		const res = await this.DBService.query("insert into files(owner_id, parent_id, share_id, is_directory, size, name) values ($1, $2, $3, true, 0, $4)", [user_id, parent_id, share_id, name]);
-		return res !== null;
+		const res = await this.DBService.query("insert into files(owner_id, parent_id, share_id, is_directory, size, name) values ($1, $2, $3, true, 0, $4) returning id;", [user_id, parent_id, share_id, name]);
+		return res[0].id || null;
 	}
 }

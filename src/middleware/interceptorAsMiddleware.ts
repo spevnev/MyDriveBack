@@ -16,7 +16,7 @@ export abstract class InterceptorMiddleware implements NestInterceptor {
 		context.getArgByIndex(2).middlewareData = middlewareData;
 		if (statusCode === 200) return next.handle();
 
-		res.sendStatus(statusCode);
+		if (!res.headersSent) res.sendStatus(statusCode);
 		return new Observable();
 	}
 }
