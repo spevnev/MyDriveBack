@@ -1,6 +1,7 @@
 import {Injectable} from "@nestjs/common";
 import {UserModel} from "./user.model";
 import {DBService} from "../../services/db.service";
+import {UsernameToId} from "./dto/usernameToId";
 
 const GIGABYTE = 2 ** 30;
 
@@ -17,6 +18,12 @@ export class UserService {
 		return user[0];
 	}
 
+	async getUsers(usernames: string[]): Promise<UsernameToId[]> {
+		const users = await this.DBService.query("select * from users where username = any($1);", [usernames]) as [UserModel];
+		return users.map(user => ({username: user.username, id: user.id}));
+	}
+
+
 	async getFreeSpace(id: number): Promise<number | null> {
 		const user = await this.DBService.query("select * from users where id = $1;", [id]) as [UserModel];
 		if (user.length !== 1) return null;
@@ -27,6 +34,7 @@ export class UserService {
 	async increaseUsedSpace(id: number, size: number): Promise<void> {
 		await this.DBService.query("update users set space_used = (select space_used from users where id = $1) + $2 where id = $1;", [id, size]);
 	}
+
 
 	async createUser(user: { username: string, password: string }): Promise<UserModel | null> {
 		try {

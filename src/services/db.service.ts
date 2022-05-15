@@ -41,7 +41,6 @@ export class DBService {
 			[`create table if not exists share
 			(
 				id             serial primary key,
-				root_file       int    unique not null,
 				can_edit_users int[]  not null default '{}',
     			can_read_users int[]  not null default '{}'
 			);`],

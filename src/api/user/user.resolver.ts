@@ -8,6 +8,7 @@ import {AuthenticationReturn} from "./dto/authentication.return";
 import {AuthenticationMiddleware} from "../../middleware/authentication/authentication.middleware";
 import {UseMiddlewares} from "../../middleware/interceptorAsMiddleware";
 import {MiddlewareData} from "../../middleware/middlewareDataDecorator";
+import {UsernameToId} from "./dto/usernameToId";
 
 @Resolver(of => UserModel)
 export class UserResolver {
@@ -25,6 +26,21 @@ export class UserResolver {
 	): Promise<UserModel | null> {
 		return await this.userService.getUser(username || user.username);
 	}
+
+	@Query(returns => [UsernameToId], {nullable: true})
+	async users(
+		@Args("usernames", {type: () => [String]}) usernames: string[],
+	): Promise<UsernameToId[]> {
+		return await this.userService.getUsers(usernames);
+	}
+
+	@Query(returns => Boolean)
+	async doesUserExist(
+		@Args("username", {type: () => String}) username: string,
+	): Promise<boolean> {
+		return !!(await this.userService.getUser(username));
+	}
+
 
 	@Mutation(returns => AuthenticationReturn)
 	async login(

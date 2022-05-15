@@ -10,6 +10,7 @@ import {UserData} from "../../middleware/authentication/user.data";
 import {UserService} from "../user/user.service";
 import {S3Service} from "../../services/s3.service";
 import {UploadFilesReturn} from "./dto/uploadFiles.return";
+import {ShareEntriesArgs} from "./dto/shareEntries.args";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
@@ -22,14 +23,14 @@ export class FileResolver {
 
 
 	@Query(returns => FileModel, {nullable: true})
-	async file(
+	async entry(
 		@Args("id", {type: () => Number}) id: number,
-		@MiddlewareData() {id: user_id}: { id: number },
+		@MiddlewareData() {id: user_id}: UserData,
 	): Promise<FileModel | null> {
 		const file: FileModel | null = await this.fileService.getEntry(id);
 		if (file === null) return null;
 
-		const isShared: object | null = await this.fileService.hasAccess(user_id, null, file.share_id);
+		const isShared: object | null = await this.fileService.hasAccess(user_id, file.id);
 		if (file.owner_id !== user_id && isShared === null) return null;
 		return file;
 	}
@@ -76,10 +77,10 @@ export class FileResolver {
 	}
 
 	@Query(returns => [FileModel], {nullable: true})
-	async rootSharedFolders(
-		@MiddlewareData() {id: user_id}: { id: number },
+	async sharedFolders(
+		@MiddlewareData() {id: user_id}: UserData,
 	): Promise<FileModel[] | null> {
-		return await this.fileService.getRootSharedFolders(user_id);
+		return await this.fileService.getSharedFolders(user_id);
 	}
 
 
@@ -158,6 +159,7 @@ export class FileResolver {
 	async downloadLink(
 		@Args("id", {type: () => Number}) id: number,
 	): Promise<string> {
+		// check access
 		return "download link";
 	}
 
@@ -168,5 +170,17 @@ export class FileResolver {
 	): Promise<boolean> {
 		// check access
 		return false;
+	}
+
+	@Mutation(returns => Boolean)
+	async shareEntries(
+		@Args() {file_id, policies}: ShareEntriesArgs,
+		@MiddlewareData() {id: user_id}: UserData,
+	): Promise<boolean> {
+		const hasAccess = await this.fileService.hasAccess(user_id, file_id);
+		if (!hasAccess) return false;
+
+		await this.fileService.shareEntries(file_id, policies);
+		return true;
 	}
 }
