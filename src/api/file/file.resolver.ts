@@ -4,13 +4,14 @@ import {FileService} from "./file.service";
 import {AuthenticationMiddleware} from "../../middleware/authentication/authentication.middleware";
 import {UseMiddlewares} from "../../middleware/interceptorAsMiddleware";
 import {MiddlewareData} from "../../middleware/middlewareDataDecorator";
-import {UploadFilesAndFoldersArgs} from "./dto/uploadFilesAndFolders.args";
+import {FileEntry, UploadFilesAndFoldersArgs} from "./dto/uploadFilesAndFolders.args";
 import {UploadFilesArgs} from "./dto/uploadFiles.args";
 import {UserData} from "../../middleware/authentication/user.data";
 import {UserService} from "../user/user.service";
 import {S3Service} from "../../services/s3.service";
 import {UploadFilesReturn} from "./dto/uploadFiles.return";
 import {ShareEntriesArgs} from "./dto/shareEntries.args";
+import {SimpleFileEntry} from "./dto/simpleFileEntry";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
@@ -84,57 +85,52 @@ export class FileResolver {
 	}
 
 
-	@Mutation(returns => [UploadFilesReturn], {nullable: true})
-	async uploadFiles(
-		@Args() {entries, parent_id}: UploadFilesArgs,
-		@MiddlewareData() {id: owner_id, drive_id}: UserData,
+	async isImage(entry: SimpleFileEntry): Promise<boolean> {
+		return false;
+	}
+
+	async upload(
+		{drive_id, id: owner_id}: UserData,
+		{parent_id, entries}: UploadFilesAndFoldersArgs,
+		topLevelEntries: SimpleFileEntry[] | FileEntry[],
 	): Promise<UploadFilesReturn[] | null> {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
-		if (!await this.fileService.canUpload(owner_id, parent_id, entries, size)) return null;
+		if (!await this.fileService.canUpload(owner_id, parent_id, topLevelEntries as FileEntry[], size)) return null;
 		await this.userService.increaseUsedSpace(owner_id, size);
 
-		const ids = await this.fileService.uploadFiles(entries, owner_id, parent_id);
-		if (ids === null) return null;
+		const containsFolders = entries.reduce((val, cur) => val ? cur.is_directory !== undefined : true, false);
+		const ids = containsFolders ? await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id) : await this.fileService.uploadFiles(entries, owner_id, parent_id);
 
-		const res = entries.map(async ({size, name, newName}) => {
-			const newPath = newName || name;
-			const [id, parent_id] = ids.get(newPath);
+		return await Promise.all(
+			entries.map(async ({path, size, name, newName}, i) => {
+				const newPath = path === undefined ? (newName || name) : path ? `${path}/${name}` : name;
+				const [id, parent_id] = ids.get(newPath);
 
-			const url = await this.S3Service.createPresignedPostURL(owner_id, id, size);
+				const url = await this.S3Service.createPresignedPostURL(owner_id, id, size);
+				const additionalUrl = await this.isImage(entries[i]) ? await this.S3Service.createPresignedPostURL(owner_id, `${id}-preview`, 2 ** 20) : null;
 
-			return {path: newPath, url, id, parent_id};
-		});
+				return {path: newPath, url, id, parent_id, additionalUrl};
+			}),
+		);
+	}
 
-		return await Promise.all(res);
+	@Mutation(returns => [UploadFilesReturn], {nullable: true})
+	async uploadFiles(
+		@Args() data: UploadFilesArgs,
+		@MiddlewareData() user: UserData,
+	): Promise<UploadFilesReturn[] | null> {
+		return await this.upload(user, data as UploadFilesAndFoldersArgs, data.entries);
 	}
 
 	@Mutation(returns => [UploadFilesReturn], {nullable: true})
 	async uploadFilesAndFolders(
-		@Args() {entries, parent_id}: UploadFilesAndFoldersArgs,
-		@MiddlewareData() {id: owner_id, drive_id}: UserData,
+		@Args() data: UploadFilesAndFoldersArgs,
+		@MiddlewareData() user: UserData,
 	): Promise<UploadFilesReturn[] | null> {
-		parent_id = parent_id || drive_id;
-
-		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
-		const topLevelEntries = entries.filter(entry => entry.path === "");
-		if (!await this.fileService.canUpload(owner_id, parent_id, topLevelEntries, size)) return null;
-		await this.userService.increaseUsedSpace(owner_id, size);
-
-		const ids = await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id);
-		if (ids === null) return null;
-
-		const res = entries.map(async ({path, size, name}) => {
-			const newPath = path ? `${path}/${name}` : name;
-			const [id, parent_id] = ids.get(newPath);
-
-			const url = await this.S3Service.createPresignedPostURL(owner_id, id, size);
-
-			return {path: newPath, url, id, parent_id};
-		});
-
-		return await Promise.all(res);
+		const topLevelEntries = data.entries.filter(entry => entry.path === "");
+		return await this.upload(user, data, topLevelEntries);
 	}
 
 	@Mutation(returns => Number)

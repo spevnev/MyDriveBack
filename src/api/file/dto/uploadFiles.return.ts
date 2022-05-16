@@ -9,6 +9,9 @@ export class UploadFilesReturn {
 	@Field(type => PresignedURL)
 	url: PresignedURL;
 
+	@Field(type => PresignedURL, {nullable: true})
+	additionalUrl?: PresignedURL;
+
 	@Field(type => Number)
 	id: number;
 

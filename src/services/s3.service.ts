@@ -31,19 +31,21 @@ export class S3Service {
 		}
 	}
 
-	async createPresignedPostURL(user_id: number, file_id: number, size: number): Promise<PresignedURL | null> {
-		const params: S3.PresignedPost.Params = {
+	async createPresignedPostURL(user_id: number, file_id: number | string, size: number, allowPublicAccess = false): Promise<PresignedURL | null> {
+		const parameters: S3.PresignedPost.Params = {
 			Bucket: this.bucketName,
 			Fields: {
 				key: `${user_id}/${file_id}`,
 			},
 			Expires: 600,
-			Conditions: [["content-length-range", 0, size]],
+			Conditions: [
+				["content-length-range", 0, size],
+				...(allowPublicAccess ? [{"acl": "public-read"}] : []),
+			],
 		};
 
 		try {
-			// TODO: disabled due to free tier limitation
-			// const {url, fields} = await this.client.createPresignedPost(params);
+			// const {url, fields} = await this.client.createPresignedPost(parameters);
 			const url = "sample url";
 			const fields = {
 				bucket: "1",

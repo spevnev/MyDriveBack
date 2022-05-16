@@ -18,9 +18,9 @@ export class TokenService {
 	}
 
 	verifyJWT(jwt: string): Promise<null | { [key: string]: any }> {
-		return new Promise((resolve, reject) => {
+		return new Promise(resolve => {
 			verify(jwt, PRIVATE_KEY, (err, value) => {
-				if (err) console.log(err); // TODO: check
+				if (err) console.log(err);
 				resolve(value as object);
 			});
 		});

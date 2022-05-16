@@ -4,7 +4,6 @@ import {FileModel} from "./file.model";
 import {SimpleFileEntryInput} from "./dto/uploadFiles.args";
 import {FileEntry} from "./dto/uploadFilesAndFolders.args";
 import {UserService} from "../user/user.service";
-import {SimpleFileEntry} from "./dto/simpleFileEntry";
 
 @Injectable()
 export class FileService {
@@ -15,8 +14,7 @@ export class FileService {
 
 	async getEntry(entry_id: number): Promise<FileModel | null> {
 		const result = await this.DBService.query("select * from files where id = $1;", [entry_id]) as [FileModel?];
-		if (result.length !== 1) return null;
-		return result[0];
+		return result.length === 1 ? result[0] : null;
 	}
 
 	async getEntries(parent_id: number): Promise<FileModel[]> {
@@ -91,14 +89,14 @@ export class FileService {
 		return count !== 0;
 	}
 
-	async canUpload(owner_id: number, parent_id: number, topLevelEntries: SimpleFileEntry[] | FileEntry[], size: number): Promise<boolean> {
+	async canUpload(owner_id: number, parent_id: number, topLevelEntries: FileEntry[], size: number): Promise<boolean> {
 		const permissions = await this.hasAccess(owner_id, parent_id);
 		if (permissions === null || permissions.canEdit === false) return false;
 
 		const free_space = await this.userService.getFreeSpace(owner_id);
 		if (size > free_space) return false;
 
-		if (topLevelEntries[0] instanceof FileEntry) {
+		if (topLevelEntries[0].is_directory !== undefined) {
 			const fileNames = topLevelEntries.map(entry => !entry.is_directory ? entry.newName || entry.name : null).filter(entry => entry !== null);
 			const hasFileCollisions = await this.doFilesCollide(fileNames, parent_id, false);
 			const folderNames = topLevelEntries.map(entry => entry.is_directory ? entry.newName || entry.name : null).filter(entry => entry !== null);
@@ -133,8 +131,8 @@ export class FileService {
 		const pathToId = new Map<string, [number, number]>();
 		pathToId.set("", [parent_id, parent_id]);
 
-		const file = await this.getEntry(parent_id);
-		const share_id = file ? file.share_id : null;
+		const parent = await this.getEntry(parent_id);
+		const share_id = parent ? parent.share_id : null;
 
 		await this.DBService.query("begin;");
 		let isError = false;
