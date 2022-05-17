@@ -31,17 +31,14 @@ export class S3Service {
 		}
 	}
 
-	async createPresignedPostURL(user_id: number, file_id: number | string, size: number, allowPublicAccess = false): Promise<PresignedURL | null> {
+	async createPresignedPostURL(user_id: number, file_id: number | string, size: number): Promise<PresignedURL | null> {
 		const parameters: S3.PresignedPost.Params = {
 			Bucket: this.bucketName,
 			Fields: {
 				key: `${user_id}/${file_id}`,
 			},
-			Expires: 600,
-			Conditions: [
-				["content-length-range", 0, size],
-				...(allowPublicAccess ? [{"acl": "public-read"}] : []),
-			],
+			Expires: 1200,
+			Conditions: [["content-length-range", 0, size]],
 		};
 
 		try {
@@ -69,6 +66,22 @@ export class S3Service {
 					Signature: fields["X-Amz-Signature"],
 				},
 			};
+		} catch (e) {
+			console.log(e);
+			return null;
+		}
+	}
+
+	async createPresignedGet(key: string): Promise<string | null> {
+		const parameters = {
+			Bucket: this.bucketName,
+			Key: key,
+			Expires: 120,
+		};
+
+		try {
+			// return await this.client.getSignedUrlPromise("getObject", parameters);
+			return null;
 		} catch (e) {
 			console.log(e);
 			return null;

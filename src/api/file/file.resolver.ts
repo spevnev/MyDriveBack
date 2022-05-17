@@ -36,9 +36,19 @@ export class FileResolver {
 		return file;
 	}
 
+	async addPreviews(entries: FileModel[], user_id: number): Promise<FileModel[]> {
+		return await Promise.all(entries.map(async entry => {
+			if (entry.is_directory === true || !this.fileService.isImage(entry.name)) return entry;
+
+			const preview = await this.S3Service.createPresignedGet(`${user_id}/${entry.id}-preview`) || undefined;
+			return {...entry, preview};
+		}));
+	}
+
 	@Query(returns => [FileModel], {nullable: true})
 	async entries(
 		@Args("parent_id", {type: () => Number, nullable: true, defaultValue: null}) parent_id: number | null,
+		@Args("include_previews", {type: () => Boolean, defaultValue: false}) include_previews: boolean,
 		@MiddlewareData() {id: user_id, drive_id}: UserData,
 	): Promise<FileModel[] | null> {
 		parent_id = parent_id || drive_id;
@@ -46,12 +56,14 @@ export class FileResolver {
 		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
 		if (hasAccess === null) return null;
 
-		return await this.fileService.getEntries(parent_id);
+		const entries = await this.fileService.getEntries(parent_id);
+		return include_previews ? await this.addPreviews(entries, user_id) : entries;
 	}
 
 	@Query(returns => [FileModel], {nullable: true})
 	async files(
 		@Args("parent_id", {type: () => Number, nullable: true, defaultValue: null}) parent_id: number | null,
+		@Args("include_previews", {type: () => Boolean, defaultValue: false}) include_previews: boolean,
 		@MiddlewareData() {id: user_id, drive_id}: UserData,
 	): Promise<FileModel[] | null> {
 		parent_id = parent_id || drive_id;
@@ -59,7 +71,8 @@ export class FileResolver {
 		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
 		if (hasAccess === null) return null;
 
-		return await this.fileService.getFiles(parent_id);
+		const files = await this.fileService.getFiles(parent_id);
+		return include_previews ? await this.addPreviews(files, user_id) : files;
 	}
 
 	@Query(returns => [FileModel], {nullable: true})
@@ -85,10 +98,6 @@ export class FileResolver {
 	}
 
 
-	async isImage(entry: SimpleFileEntry): Promise<boolean> {
-		return false;
-	}
-
 	async upload(
 		{drive_id, id: owner_id}: UserData,
 		{parent_id, entries}: UploadFilesAndFoldersArgs,
@@ -100,7 +109,7 @@ export class FileResolver {
 		if (!await this.fileService.canUpload(owner_id, parent_id, topLevelEntries as FileEntry[], size)) return null;
 		await this.userService.increaseUsedSpace(owner_id, size);
 
-		const containsFolders = entries.reduce((val, cur) => val ? cur.is_directory !== undefined : true, false);
+		const containsFolders = entries.reduce((val, cur) => val ? true : cur.is_directory !== undefined, false);
 		const ids = containsFolders ? await this.fileService.uploadFilesAndFolders(entries, owner_id, parent_id) : await this.fileService.uploadFiles(entries, owner_id, parent_id);
 
 		return await Promise.all(
@@ -109,7 +118,7 @@ export class FileResolver {
 				const [id, parent_id] = ids.get(newPath);
 
 				const url = await this.S3Service.createPresignedPostURL(owner_id, id, size);
-				const additionalUrl = await this.isImage(entries[i]) ? await this.S3Service.createPresignedPostURL(owner_id, `${id}-preview`, 2 ** 20) : null;
+				const additionalUrl = this.fileService.isImage(entries[i].name) ? await this.S3Service.createPresignedPostURL(owner_id, `${id}-preview`, 2 ** 20) : null;
 
 				return {path: newPath, url, id, parent_id, additionalUrl};
 			}),

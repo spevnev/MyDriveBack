@@ -28,4 +28,7 @@ export class FileModel {
 
 	@Field(type => String)
 	modified_at: string;
+
+	@Field(type => String, {nullable: true})
+	preview?: string;
 }

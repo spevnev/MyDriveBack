@@ -80,6 +80,11 @@ export class FileService {
 		return await this.getSharePolicy(file.id, user_id);
 	}
 
+	isImage(filename: string): boolean {
+		const extensions = [".jpg", ".jpeg", ".png"];
+		return extensions.reduce((res, extension) => res ? true : filename.endsWith(extension), false);
+	}
+
 	async doFilesCollide(names: string[], parent_id: number, is_directory: boolean): Promise<boolean> {
 		const result = await this.DBService.query("select count(1) from files where parent_id = $1 and is_directory = $2 and name = any($3)", [parent_id, is_directory, names]) as [{ count: number }?];
 		if (result.length === 0) return true;
