@@ -92,9 +92,25 @@ export class FileResolver {
 
 	@Query(returns => [FileModel], {nullable: true})
 	async sharedFolders(
+		@Args("include_owners", {type: () => Boolean, defaultValue: false}) include_owners: boolean,
 		@MiddlewareData() {id: user_id}: UserData,
 	): Promise<FileModel[] | null> {
-		return await this.fileService.getSharedFolders(user_id);
+		return include_owners ? await this.fileService.getSharedFoldersAndOwnerUsernames(user_id) : await this.fileService.getSharedFolders(user_id);
+	}
+
+	@Query(returns => [String])
+	async usernamesWhoShareWithMe(
+		@MiddlewareData() {id: user_id}: UserData,
+	): Promise<string[]> {
+		return await this.fileService.getUsernamesWhoShareWithUser(user_id);
+	}
+
+	@Query(returns => [FileModel])
+	async usersSharedEntries(
+		@Args("username", {type: () => String}) username: string,
+		@MiddlewareData() {id: user_id}: UserData,
+	): Promise<FileModel[]> {
+		return await this.fileService.getUsersSharedEntries(user_id, username);
 	}
 
 

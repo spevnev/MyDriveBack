@@ -46,13 +46,49 @@ export class FileService {
 		return await this.DBService.query(`
 			with s as (
 				select array_agg(id) ids from share as s where s.can_read_users @> $1
-			) select id, name, owner_id, parent_id, share_id, size, name, is_directory, modified_at from files, s
+			) select f.* from s, files as f
 			where is_directory = true and share_id = any(s.ids);
 		`, [[user_id]]) as FileModel[];
 	}
 
+	async getSharedFoldersAndOwnerUsernames(user_id: number): Promise<FileModel[]> {
+		return await this.DBService.query(`
+			with s as (
+				select array_agg(id) ids from share as s where s.can_read_users @> $1
+			) select f.*, username from s, files as f
+			join users as u on f.owner_id = u.id
+			where is_directory = true and share_id = any(s.ids);
+		`, [[user_id]]) as FileModel[];
+	}
 
-	async getSharePolicy(entry_id: number, user_id: number): Promise<{ canEdit: boolean } | null> { // TODO. Finish (+ test):
+	async getUsernamesWhoShareWithUser(user_id: number): Promise<string[]> {
+		const result = await this.DBService.query(`
+			with s as (
+				select array_agg(id) ids from share as s where s.can_read_users @> $1
+			) select username from s, files as f 
+			join users as u on f.owner_id = u.id
+			where is_directory = true and share_id = any(s.ids);
+		`, [[user_id]]) as { username: string }[];
+
+		return result.map(({username}) => username);
+	}
+
+	async getUsersSharedEntries(user_id: number, username: string): Promise<FileModel[]> {
+		return await this.DBService.query(`
+			with s as (
+				select array_agg(id) ids from share as s where s.can_read_users @> $1
+			),   f as (
+				select f.* from s, files as f
+				join users as u on f.owner_id = u.id
+				where username = $2 and share_id = any(s.ids)
+			) select f.* from f
+			join files as p on f.parent_id = p.id
+			where p.share_id is null or p.share_id != f.share_id;
+		`, [[user_id], username]) as FileModel[];
+	}
+
+
+	async getSharePolicy(entry_id: number, user_id: number): Promise<{ canEdit: boolean } | null> {
 		const result = await this.DBService.query(`
 			with recursive
 			s as (
@@ -66,9 +102,16 @@ export class FileService {
 				on f.parent_id = d.id
 				where f.share_id = s.id
 			)
-			select * from directories, s;
-		`, [[user_id], entry_id]);
-		console.log(result);
+			select * from s;
+		`, [[user_id], entry_id]) as [{ can_edit_users: number[], can_read_users: number[] }];
+
+		for (let i = 0; i < result.length; i++) {
+			const {can_edit_users, can_read_users} = result[i];
+
+			if (can_edit_users.includes(user_id)) return {canEdit: true};
+			if (can_read_users.includes(user_id)) return {canEdit: false};
+		}
+
 		return null;
 	}
 

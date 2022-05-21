@@ -31,4 +31,7 @@ export class FileModel {
 
 	@Field(type => String, {nullable: true})
 	preview?: string;
+
+	@Field(type => String, {nullable: true})
+	username?: string;
 }
