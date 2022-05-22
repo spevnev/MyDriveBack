@@ -12,6 +12,7 @@ import {S3Service} from "../../services/s3.service";
 import {UploadFilesReturn} from "./dto/uploadFiles.return";
 import {ShareEntriesArgs} from "./dto/shareEntries.args";
 import {SimpleFileEntry} from "./dto/simpleFileEntry";
+import {MoveEntriesArgs} from "./dto/moveEntries.args";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
@@ -202,6 +203,21 @@ export class FileResolver {
 		if (!hasAccess) return false;
 
 		await this.fileService.shareEntries(file_id, policies);
+		return true;
+	}
+
+	@Mutation(returns => Boolean)
+	async moveEntries(
+		@Args() {entries, parent_id}: MoveEntriesArgs,
+		@MiddlewareData() {id: user_id}: UserData,
+	): Promise<boolean> {
+		const hasAccessToFolder = await this.fileService.hasAccess(user_id, parent_id);
+		if (!hasAccessToFolder) return false;
+
+		const hasAccessToEntries = await this.fileService.hasAccess(user_id, entries[0]?.parent_id);
+		if (!hasAccessToEntries) return false;
+
+		await this.fileService.moveEntries(entries, parent_id);
 		return true;
 	}
 }

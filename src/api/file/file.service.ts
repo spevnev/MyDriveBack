@@ -4,6 +4,7 @@ import {FileModel} from "./file.model";
 import {SimpleFileEntryInput} from "./dto/uploadFiles.args";
 import {FileEntry} from "./dto/uploadFilesAndFolders.args";
 import {UserService} from "../user/user.service";
+import {MoveEntriesEntry} from "./dto/moveEntries.args";
 
 @Injectable()
 export class FileService {
@@ -234,5 +235,14 @@ export class FileService {
 				) update files as f set share_id = $3 from directories as d where f.id = d.id;
 			`, [entry_id, entry.share_id, share_id]);
 		}
+	}
+
+	async moveEntries(entries: MoveEntriesEntry[], parent_id: number) {
+		const [ids, parent_ids, names] = entries.reduce(([a1, a2, a3], {id, parent_id, name}) => [[...a1, id], [...a2, parent_id], [...a3, name]], [[], [], []]);
+
+		await this.DBService.query(`
+			with data as (select  unnest($1::int[]) as id, unnest($2::int[]) as parent_id, unnest($3::varchar[]) as name)
+			update files as f set parent_id = $4, name = d.name from data as d where f.parent_id = d.parent_id and f.id = d.id;
+		`, [ids as number[], parent_ids as number[], names as string[], parent_id]);
 	}
 }
