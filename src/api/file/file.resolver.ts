@@ -187,11 +187,15 @@ export class FileResolver {
 
 	@Mutation(returns => Boolean)
 	async rename(
-		@Args("id", {type: () => Number}) id: number,
+		@Args("file_id", {type: () => Number}) file_id: number,
 		@Args("newFilename", {type: () => String}) newFilename: string,
+		@MiddlewareData() {id: user_id}: UserData,
 	): Promise<boolean> {
-		// check access
-		return false;
+		const hasAccess = await this.fileService.hasAccess(user_id, file_id);
+		if (!hasAccess) return false;
+
+		await this.fileService.renameEntry(file_id, newFilename);
+		return true;
 	}
 
 	@Mutation(returns => Boolean)

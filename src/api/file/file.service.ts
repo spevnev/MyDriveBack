@@ -245,4 +245,8 @@ export class FileService {
 			update files as f set parent_id = $4, name = d.name from data as d where f.parent_id = d.parent_id and f.id = d.id;
 		`, [ids as number[], parent_ids as number[], names as string[], parent_id]);
 	}
+
+	async renameEntry(entry_id: number, newFilename: string) {
+		await this.DBService.query(`update files set name = $1 where id = $2;`, [newFilename, entry_id]);
+	}
 }
