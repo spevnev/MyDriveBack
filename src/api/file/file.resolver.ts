@@ -37,6 +37,21 @@ export class FileResolver {
 		return file;
 	}
 
+	@Query(returns => String, {nullable: true})
+	async entryPresignedUrl(
+		@Args("file_id", {type: () => Number}) file_id: number,
+		@MiddlewareData() {id: user_id}: UserData,
+	): Promise<string | null> {
+		const hasAccess = await this.fileService.hasAccess(user_id, file_id);
+		if (hasAccess === null) return null;
+
+		const file: FileModel | null = await this.fileService.getEntry(file_id);
+		if (file === null || file.is_directory) return null;
+
+		const url = await this.S3Service.createPresignedGet(`${file.owner_id}/${file.id}`);
+		return url || null;
+	}
+
 	async addPreviews(entries: FileModel[], user_id: number): Promise<FileModel[]> {
 		return await Promise.all(entries.map(async entry => {
 			if (entry.is_directory === true || !this.fileService.isImage(entry.name)) return entry;
