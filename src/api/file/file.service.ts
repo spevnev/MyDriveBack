@@ -18,8 +18,18 @@ export class FileService {
 		return result.length === 1 ? result[0] : null;
 	}
 
-	async getEntries(parent_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id = $1;", [parent_id]) as FileModel[];
+	async getEntries(parent_id: number, recursively = false): Promise<FileModel[]> {
+		if (!recursively) return await this.DBService.query("select * from files where parent_id = $1;", [parent_id]) as FileModel[];
+
+		return await this.DBService.query(`
+			with recursive recfiles as (
+			  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files f
+				where id = $1 and is_directory = true
+			  union
+			  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files f
+				inner join recfiles r on f.parent_id = r.id
+			) select * from recfiles;
+		`, [parent_id]) as FileModel[];
 	}
 
 	async getFiles(parent_id: number): Promise<FileModel[]> {
@@ -33,10 +43,10 @@ export class FileService {
 	async getFoldersInFolderRecursively(parent_id: number): Promise<FileModel[]> {
 		return await this.DBService.query(`
 			with recursive directories as (
-			  select f.id, f.parent_id, f.name, 0 as depth from files f
+			  select f.id, f.parent_id, f.name from files f
 				where parent_id = $1 and is_directory = true
 			  union
-			  select f.id, f.parent_id, f.name, d.depth + 1 as depth from files f
+			  select f.id, f.parent_id, f.name from files f
 				inner join directories d on f.parent_id = d.id
 				where  is_directory = true
 			) select * from directories;

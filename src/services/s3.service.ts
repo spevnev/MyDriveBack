@@ -37,7 +37,7 @@ export class S3Service {
 			Fields: {
 				key: `${user_id}/${file_id}`,
 			},
-			Expires: 1200,
+			Expires: 1800,
 			Conditions: [["content-length-range", 0, size]],
 		};
 
@@ -76,7 +76,7 @@ export class S3Service {
 		const parameters = {
 			Bucket: this.bucketName,
 			Key: key,
-			Expires: 120,
+			Expires: 1800,
 		};
 
 		try {

@@ -13,6 +13,7 @@ import {UploadFilesReturn} from "./dto/uploadFiles.return";
 import {ShareEntriesArgs} from "./dto/shareEntries.args";
 import {SimpleFileEntry} from "./dto/simpleFileEntry";
 import {MoveEntriesArgs} from "./dto/moveEntries.args";
+import {GetPresignedUrl} from "./dto/getPresignedUrls";
 
 @Resolver(of => FileModel)
 @UseMiddlewares(AuthenticationMiddleware)
@@ -74,6 +75,38 @@ export class FileResolver {
 
 		const entries = await this.fileService.getEntries(parent_id);
 		return include_previews ? await this.addPreviews(entries, user_id) : entries;
+	}
+
+	@Query(returns => [GetPresignedUrl], {nullable: true})
+	async entriesPresignedUrls(
+		@Args("file_ids", {type: () => [Number]}) file_ids: number[],
+		@MiddlewareData() {id: user_id}: UserData,
+	): Promise<GetPresignedUrl[] | null> {
+		for (let i = 0; i < file_ids.length; i++) {
+			const hasAccess = await this.fileService.hasAccess(user_id, file_ids[i]);
+			if (hasAccess === null) return null;
+		}
+
+		const entries: FileModel[] = [];
+		await Promise.all(file_ids.map(async id => {
+			const entry = await this.fileService.getEntry(id);
+			if (!entry.is_directory) {
+				entries.push(entry);
+				return;
+			}
+
+			const childEntries = await this.fileService.getEntries(id, true);
+			entries.push(...childEntries);
+		}));
+
+		return await Promise.all(
+			entries.map(async entry => {
+				const {id, parent_id, name, is_directory} = entry;
+				const url = await this.S3Service.createPresignedGet(`${entry.owner_id}/${entry.id}`);
+
+				return {file_id: id, parent_id, name, url, is_directory};
+			}),
+		);
 	}
 
 	@Query(returns => [FileModel], {nullable: true})
