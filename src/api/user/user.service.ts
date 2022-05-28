@@ -35,6 +35,10 @@ export class UserService {
 		await this.DBService.query("update users set space_used = (select space_used from users where id = $1) + $2 where id = $1;", [id, size]);
 	}
 
+	async decreaseUsedSpace(id: number, size: number): Promise<void> {
+		await this.DBService.query("update users set space_used = (select space_used from users where id = $1) - $2 where id = $1;", [id, size]);
+	}
+
 
 	async createUser(user: { username: string, password: string }): Promise<UserModel | null> {
 		try {

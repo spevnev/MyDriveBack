@@ -5,6 +5,7 @@ import {SimpleFileEntryInput} from "./dto/uploadFiles.args";
 import {FileEntry} from "./dto/uploadFilesAndFolders.args";
 import {UserService} from "../user/user.service";
 import {MoveEntriesEntry} from "./dto/moveEntries.args";
+import {BinData} from "./dto/binData";
 
 @Injectable()
 export class FileService {
@@ -32,12 +33,13 @@ export class FileService {
 		`, [parent_id]) as FileModel[];
 	}
 
-	async getFiles(parent_id: number): Promise<FileModel[]> {
-		return await this.DBService.query("select * from files where parent_id = $1 and is_directory = false;", [parent_id]) as FileModel[];
-	}
-
 	async getFolders(parent_id: number): Promise<FileModel[]> {
 		return await this.DBService.query("select * from files where parent_id = $1 and is_directory = true;", [parent_id]) as FileModel[];
+	}
+
+	async getBinData(id: number): Promise<BinData> {
+		const [data] = await this.DBService.query("select * from bin where id = $1;", [id]) as [BinData];
+		return data;
 	}
 
 	async getFoldersInFolderRecursively(parent_id: number): Promise<FileModel[]> {
@@ -137,6 +139,21 @@ export class FileService {
 	isImage(filename: string): boolean {
 		const extensions = [".jpg", ".jpeg", ".png"];
 		return extensions.reduce((res, extension) => res ? true : filename.endsWith(extension), false);
+	}
+
+	async isInBin(folder_id: number, bin_id: number): Promise<boolean> {
+		if (folder_id === bin_id) return true;
+
+		const parents = await this.DBService.query(`
+			with recursive directories as (
+				select id, parent_id from files where id = $1
+				union
+				select f.id, f.parent_id from files as f
+				join directories as d on f.id = d.parent_id
+			) select id from directories;
+		`, [folder_id]);
+
+		return parents.includes(bin_id);
 	}
 
 	async doFilesCollide(names: string[], parent_id: number, is_directory: boolean): Promise<boolean> {
@@ -258,5 +275,37 @@ export class FileService {
 
 	async renameEntry(entry_id: number, newFilename: string) {
 		await this.DBService.query(`update files set name = $1 where id = $2;`, [newFilename, entry_id]);
+	}
+
+	async addEntryToBin(entry_id: number, parent_id: number) {
+		await this.DBService.query(`insert into bin(id, prev_parent_id) values($1, $2);`, [entry_id, parent_id]);
+	}
+
+	async deleteExpiredEntries() {
+		const entries = await this.DBService.query(`
+			select f.* from bin as b 
+			join files as f on b.id = f.id 
+			where b.put_at < (round(extract(epoch from now()) * 1000) - 3 * 24 * 60 * 60 * 1000);
+		`, []) as FileModel[];
+
+		const ids: number[] = entries.map(entry => entry.id);
+		await this.DBService.query(`delete from bin where id = any($1::int[]);`, [ids]);
+		await this.DBService.query(`delete from files where id = any($1::int[]);`, [ids]);
+
+		const userToSpace: { [key: number]: number } = {};
+		entries.forEach(({owner_id, size}) => {
+			if (!userToSpace[owner_id]) userToSpace[owner_id] = 0;
+			userToSpace[owner_id] += size;
+		});
+		Object.entries(userToSpace).forEach(([user_id, space]) => this.userService.decreaseUsedSpace(Number(user_id), space));
+
+		this.DBService.query(`
+			with c as (
+			  select (count(1) - 1) as count, s.id from share as s
+			  left join files as f on f.share_id = s.id
+			  group by s.id
+			) delete from share as s
+			where (select count from c where c.id = s.id) = 0;
+		`);
 	}
 }

@@ -12,7 +12,7 @@ import {S3Service} from "../../services/s3.service";
 import {UploadFilesReturn} from "./dto/uploadFiles.return";
 import {ShareEntriesArgs} from "./dto/shareEntries.args";
 import {SimpleFileEntry} from "./dto/simpleFileEntry";
-import {MoveEntriesArgs} from "./dto/moveEntries.args";
+import {MoveEntriesArgs, MoveEntriesEntry} from "./dto/moveEntries.args";
 import {GetPresignedUrl} from "./dto/getPresignedUrls";
 
 @Resolver(of => FileModel)
@@ -66,7 +66,7 @@ export class FileResolver {
 	async entries(
 		@Args("parent_id", {type: () => Number, nullable: true, defaultValue: null}) parent_id: number | null,
 		@Args("include_previews", {type: () => Boolean, defaultValue: false}) include_previews: boolean,
-		@MiddlewareData() {id: user_id, drive_id}: UserData,
+		@MiddlewareData() {id: user_id, drive_id, bin_id}: UserData,
 	): Promise<FileModel[] | null> {
 		parent_id = parent_id || drive_id;
 
@@ -74,7 +74,17 @@ export class FileResolver {
 		if (hasAccess === null) return null;
 
 		const entries = await this.fileService.getEntries(parent_id);
-		return include_previews ? await this.addPreviews(entries, user_id) : entries;
+		if (include_previews) return await this.addPreviews(entries, user_id);
+
+		const isInBin = await this.fileService.isInBin(parent_id, bin_id);
+		if (isInBin) {
+			return await Promise.all(entries.map(async entry => {
+				const bin_data = await this.fileService.getBinData(entry.id);
+				return {...entry, bin_data};
+			}));
+		}
+
+		return entries;
 	}
 
 	@Query(returns => [GetPresignedUrl], {nullable: true})
@@ -107,21 +117,6 @@ export class FileResolver {
 				return {file_id: id, parent_id, name, url, is_directory};
 			}),
 		);
-	}
-
-	@Query(returns => [FileModel], {nullable: true})
-	async files(
-		@Args("parent_id", {type: () => Number, nullable: true, defaultValue: null}) parent_id: number | null,
-		@Args("include_previews", {type: () => Boolean, defaultValue: false}) include_previews: boolean,
-		@MiddlewareData() {id: user_id, drive_id}: UserData,
-	): Promise<FileModel[] | null> {
-		parent_id = parent_id || drive_id;
-
-		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
-		if (hasAccess === null) return null;
-
-		const files = await this.fileService.getFiles(parent_id);
-		return include_previews ? await this.addPreviews(files, user_id) : files;
 	}
 
 	@Query(returns => [FileModel], {nullable: true})
@@ -225,14 +220,6 @@ export class FileResolver {
 	}
 
 
-	@Query(returns => String)
-	async downloadLink(
-		@Args("id", {type: () => Number}) id: number,
-	): Promise<string> {
-		// check access
-		return "download link";
-	}
-
 	@Mutation(returns => Boolean)
 	async rename(
 		@Args("file_id", {type: () => Number}) file_id: number,
@@ -254,6 +241,10 @@ export class FileResolver {
 		const hasAccess = await this.fileService.hasAccess(user_id, file_id);
 		if (!hasAccess) return false;
 
+		const entry = await this.fileService.getEntry(file_id);
+		policies.can_edit_users = policies.can_edit_users.filter(id => id !== entry.owner_id);
+		policies.can_read_users = policies.can_read_users.filter(id => id !== entry.owner_id);
+
 		await this.fileService.shareEntries(file_id, policies);
 		return true;
 	}
@@ -266,10 +257,54 @@ export class FileResolver {
 		const hasAccessToFolder = await this.fileService.hasAccess(user_id, parent_id);
 		if (!hasAccessToFolder) return false;
 
-		const hasAccessToEntries = await this.fileService.hasAccess(user_id, entries[0]?.parent_id);
-		if (!hasAccessToEntries) return false;
+		for (let i = 0; i < entries.length; i++) {
+			const hasAccessToEntry = await this.fileService.hasAccess(user_id, entries[i].id);
+			if (!hasAccessToEntry) return false;
+		}
 
 		await this.fileService.moveEntries(entries, parent_id);
+		return true;
+	}
+
+	@Mutation(returns => Boolean)
+	async putEntriesInBin(
+		@Args("entries", {type: () => [MoveEntriesEntry]}) entries: MoveEntriesEntry[],
+		@MiddlewareData() {id: user_id, bin_id}: UserData,
+	): Promise<boolean> {
+		for (let i = 0; i < entries.length; i++) {
+			const hasAccess = await this.fileService.hasAccess(user_id, entries[i].id);
+			if (!hasAccess) return false;
+		}
+
+		for (let i = 0; i < entries.length; i++) {
+			const entry = await this.fileService.getEntry(entries[i].id);
+			const allEntries = entry.is_directory ? await this.fileService.getEntries(entry.parent_id, true) : [entry];
+
+			await Promise.all(allEntries.map(async entry => {
+				const key = `${entry.owner_id}/${entry.id}`;
+				if (!entry.is_directory) await this.S3Service.tagObject(key, "inBin", "true");
+				await this.fileService.addEntryToBin(entry.id, entry.parent_id);
+
+				if (entry.preview) await this.S3Service.tagObject(`${key}-preview`, "inBin", "true");
+			}));
+		}
+
+		await this.fileService.moveEntries(entries, bin_id);
+		return true;
+	}
+
+	@Mutation(returns => Boolean)
+	async restoreEntries(
+		@Args("entry_ids", {type: () => [Number]}) entry_ids: number[],
+		@MiddlewareData() {id: user_id}: UserData,
+	): Promise<boolean> {
+		for (let i = 0; i < entry_ids.length; i++) {
+			const hasAccess = await this.fileService.hasAccess(user_id, entry_ids[i]);
+			if (!hasAccess) return false;
+		}
+
+		// TODO.
+
 		return true;
 	}
 }

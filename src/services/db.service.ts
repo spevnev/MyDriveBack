@@ -35,8 +35,7 @@ export class DBService {
 				share_id     int,
 				size         int          not null,
 				name         varchar(255) not null,
-				is_directory boolean      not null,
-				modified_at   bigint       not null default (round(extract(epoch from now()) * 1000))
+				is_directory boolean      not null
 			);`],
 			[`create table if not exists share
 			(
@@ -52,6 +51,12 @@ export class DBService {
     			drive_id   int         unique,
     			bin_id     int         unique,
     			space_used int         not null default 0
+			);`],
+			[`create table if not exists bin
+    		(
+    			id             int         not null unique,
+    			put_at         bigint      not null default (round(extract(epoch from now()) * 1000)),
+    			prev_parent_id int         not null
 			);`],
 		]);
 	}

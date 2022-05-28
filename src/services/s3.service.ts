@@ -1,8 +1,9 @@
 import {Injectable} from "@nestjs/common";
 import {S3} from "aws-sdk";
 import {PresignedURL} from "../api/file/dto/presignedURL";
+import {PutObjectTaggingRequest} from "aws-sdk/clients/s3";
 
-import("dotenv/config").catch(e => e);
+import("dotenv/config").catch(e => null);
 
 @Injectable()
 export class S3Service {
@@ -82,6 +83,21 @@ export class S3Service {
 		try {
 			// return await this.client.getSignedUrlPromise("getObject", parameters);
 			return null;
+		} catch (e) {
+			console.log(e);
+			return null;
+		}
+	}
+
+	async tagObject(key: string, tag: string, value: string): Promise<boolean> {
+		const params: PutObjectTaggingRequest = {
+			Bucket: this.bucketName,
+			Key: key,
+			Tagging: {TagSet: [{Key: tag, Value: value}]},
+		};
+
+		try {
+			await new Promise((resolve, reject) => this.client.putObjectTagging(params, (err, data) => err ? reject(err) : resolve(data)));
 		} catch (e) {
 			console.log(e);
 			return null;

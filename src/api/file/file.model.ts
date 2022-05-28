@@ -1,5 +1,6 @@
 import {Field, ObjectType} from "@nestjs/graphql";
 import {MaxLength, Min} from "class-validator";
+import {BinData} from "./dto/binData";
 
 @ObjectType()
 export class FileModel {
@@ -26,12 +27,12 @@ export class FileModel {
 	@Field(type => Boolean)
 	is_directory: boolean;
 
-	@Field(type => String)
-	modified_at: string;
-
 	@Field(type => String, {nullable: true})
 	preview?: string;
 
 	@Field(type => String, {nullable: true})
 	username?: string;
+
+	@Field(type => BinData, {nullable: true})
+	bin_data?: BinData;
 }

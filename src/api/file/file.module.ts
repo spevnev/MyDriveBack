@@ -6,5 +6,6 @@ import {UserModule} from "../user/user.module";
 @Module({
 	providers: [FileService, FileResolver],
 	imports: [UserModule],
+	exports: [FileService],
 })
 export class FileModule {}
