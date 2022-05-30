@@ -2,7 +2,7 @@ import {Field, ObjectType} from "@nestjs/graphql";
 
 @ObjectType()
 export class BinData {
-	@Field(type => Number)
+	@Field(type => String)
 	put_at: number;
 
 	@Field(type => Number)

@@ -15,21 +15,33 @@ export class FileService {
 	) {}
 
 	async getEntry(entry_id: number): Promise<FileModel | null> {
-		const result = await this.DBService.query("select * from files where id = $1;", [entry_id]) as [FileModel?];
+		const result = await this.DBService.query(`
+			select f.*, (to_json(b)::jsonb - 'id') as bin_data from files as f 
+			left join bin as b on f.id = b.id
+			where f.id = $1;
+		`, [entry_id]) as [FileModel?];
+
 		return result.length === 1 ? result[0] : null;
 	}
 
 	async getEntries(parent_id: number, recursively = false): Promise<FileModel[]> {
-		if (!recursively) return await this.DBService.query("select * from files where parent_id = $1;", [parent_id]) as FileModel[];
+		if (!recursively) {
+			return await this.DBService.query(`
+				select f.*, (to_json(b)::jsonb - 'id') as bin_data from files as f
+				left join bin as b on f.id = b.id
+				where parent_id = $1;
+			`, [parent_id]) as FileModel[];
+		}
 
 		return await this.DBService.query(`
 			with recursive recfiles as (
-			  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files f
+			  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files as f
 				where id = $1 and is_directory = true
 			  union
-			  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files f
+			  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files as f
 				inner join recfiles r on f.parent_id = r.id
-			) select * from recfiles;
+			) select *, r.*, (to_json(b)::jsonb - 'id') as bin_data from recfiles as r
+			left join bin as b on r.id = b.id;
 		`, [parent_id]) as FileModel[];
 	}
 
@@ -141,19 +153,9 @@ export class FileService {
 		return extensions.reduce((res, extension) => res ? true : filename.endsWith(extension), false);
 	}
 
-	async isInBin(folder_id: number, bin_id: number): Promise<boolean> {
-		if (folder_id === bin_id) return true;
-
-		const parents = await this.DBService.query(`
-			with recursive directories as (
-				select id, parent_id from files where id = $1
-				union
-				select f.id, f.parent_id from files as f
-				join directories as d on f.id = d.parent_id
-			) select id from directories;
-		`, [folder_id]);
-
-		return parents.includes(bin_id);
+	async isInBin(entry_id: number): Promise<boolean> {
+		const [result] = await this.DBService.query(`select count(1) from bin where id = $1;`, [entry_id]) as [{ count: string }?];
+		return result ? result.count === "1" : false;
 	}
 
 	async doFilesCollide(names: string[], parent_id: number, is_directory: boolean): Promise<boolean> {
@@ -281,6 +283,10 @@ export class FileService {
 		await this.DBService.query(`insert into bin(id, prev_parent_id) values($1, $2);`, [entry_id, parent_id]);
 	}
 
+	async removeEntriesFromBin(entry_ids: number[]) {
+		await this.DBService.query(`delete from bin where id = any($1);`, [entry_ids]);
+	}
+
 	async deleteExpiredEntries() {
 		const entries = await this.DBService.query(`
 			select f.* from bin as b 
@@ -307,5 +313,10 @@ export class FileService {
 			) delete from share as s
 			where (select count from c where c.id = s.id) = 0;
 		`);
+	}
+
+	async fullyDeleteEntries(entry_ids: number[]) {
+		await this.DBService.query(`delete from bin where id = any($1);`, [entry_ids]);
+		await this.DBService.query(`delete from files where id = any($1);`, [entry_ids]);
 	}
 }

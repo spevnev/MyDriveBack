@@ -7,6 +7,7 @@ export class ScheduledServices {
 	constructor(
 		private fileService: FileService,
 	) {
-		scheduleJob("0 * * * * *", () => this.fileService.deleteExpiredEntries());
+		// Every hour
+		scheduleJob("* 0 * * * *", () => this.fileService.deleteExpiredEntries());
 	}
 }

@@ -66,7 +66,7 @@ export class FileResolver {
 	async entries(
 		@Args("parent_id", {type: () => Number, nullable: true, defaultValue: null}) parent_id: number | null,
 		@Args("include_previews", {type: () => Boolean, defaultValue: false}) include_previews: boolean,
-		@MiddlewareData() {id: user_id, drive_id, bin_id}: UserData,
+		@MiddlewareData() {id: user_id, drive_id}: UserData,
 	): Promise<FileModel[] | null> {
 		parent_id = parent_id || drive_id;
 
@@ -75,14 +75,6 @@ export class FileResolver {
 
 		const entries = await this.fileService.getEntries(parent_id);
 		if (include_previews) return await this.addPreviews(entries, user_id);
-
-		const isInBin = await this.fileService.isInBin(parent_id, bin_id);
-		if (isInBin) {
-			return await Promise.all(entries.map(async entry => {
-				const bin_data = await this.fileService.getBinData(entry.id);
-				return {...entry, bin_data};
-			}));
-		}
 
 		return entries;
 	}
@@ -278,14 +270,14 @@ export class FileResolver {
 
 		for (let i = 0; i < entries.length; i++) {
 			const entry = await this.fileService.getEntry(entries[i].id);
-			const allEntries = entry.is_directory ? await this.fileService.getEntries(entry.parent_id, true) : [entry];
+			const allEntries = entry.is_directory ? await this.fileService.getEntries(entry.id, true) : [entry];
 
 			await Promise.all(allEntries.map(async entry => {
 				const key = `${entry.owner_id}/${entry.id}`;
 				if (!entry.is_directory) await this.S3Service.tagObject(key, "inBin", "true");
 				await this.fileService.addEntryToBin(entry.id, entry.parent_id);
 
-				if (entry.preview) await this.S3Service.tagObject(`${key}-preview`, "inBin", "true");
+				if (this.fileService.isImage(entry.name)) await this.S3Service.tagObject(`${key}-preview`, "inBin", "true");
 			}));
 		}
 
@@ -296,15 +288,55 @@ export class FileResolver {
 	@Mutation(returns => Boolean)
 	async restoreEntries(
 		@Args("entry_ids", {type: () => [Number]}) entry_ids: number[],
-		@MiddlewareData() {id: user_id}: UserData,
+		@Args("restore_to_drive", {type: () => Boolean}) restore_to_drive: boolean,
+		@MiddlewareData() {bin_id, drive_id}: UserData,
 	): Promise<boolean> {
+		let entries: FileModel[] = [];
 		for (let i = 0; i < entry_ids.length; i++) {
-			const hasAccess = await this.fileService.hasAccess(user_id, entry_ids[i]);
-			if (!hasAccess) return false;
+			const entry = await this.fileService.getEntry(entry_ids[i]);
+			if (entry.parent_id !== bin_id) return false;
+
+			entries.push(...(entry.is_directory ? await this.fileService.getEntries(entry.id, true) : [entry]));
+		}
+		entries = entries.filter(entry => !!entry.bin_data);
+
+		const allEntryIds = entries.map(entry => entry.id);
+		await Promise.all(entries.map(async entry => {
+			const key = `${entry.owner_id}/${entry.id}`;
+			await this.S3Service.tagObject(key, "inBin", "false");
+			if (this.fileService.isImage(entry.name)) await this.S3Service.tagObject(`${key}-preview`, "inBin", "false");
+
+			let folderIdToRestoreTo: number;
+			if (restore_to_drive && entry_ids.includes(entry.id)) {
+				folderIdToRestoreTo = drive_id;
+			} else {
+				const prev_parent_id = entry.bin_data.prev_parent_id;
+				const isPrevParentInBin = !allEntryIds.includes(prev_parent_id) && await this.fileService.isInBin(prev_parent_id);
+				folderIdToRestoreTo = isPrevParentInBin ? drive_id : prev_parent_id;
+			}
+
+			await this.fileService.moveEntries([entry], folderIdToRestoreTo);
+		}));
+
+		await this.fileService.removeEntriesFromBin(allEntryIds);
+		return true;
+	}
+
+	@Mutation(returns => Boolean)
+	async fullyDeleteEntries(
+		@Args("entry_ids", {type: () => [Number]}) entry_ids: number[],
+		@MiddlewareData() {bin_id}: UserData,
+	): Promise<boolean> {
+		const entries: FileModel[] = [];
+		for (let i = 0; i < entry_ids.length; i++) {
+			const entry = await this.fileService.getEntry(entry_ids[i]);
+			if (entry.parent_id !== bin_id) return false;
+
+			entries.push(...(entry.is_directory ? await this.fileService.getEntries(entry.id, true) : [entry]));
 		}
 
-		// TODO.
-
+		const ids: number[] = entries.map(entry => entry.bin_data ? entry.id : null).filter(a => a !== null);
+		await this.fileService.fullyDeleteEntries(ids);
 		return true;
 	}
 }

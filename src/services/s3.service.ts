@@ -97,10 +97,11 @@ export class S3Service {
 		};
 
 		try {
-			await new Promise((resolve, reject) => this.client.putObjectTagging(params, (err, data) => err ? reject(err) : resolve(data)));
+			// await new Promise((resolve, reject) => this.client.putObjectTagging(params, (err, data) => err ? reject(err) : resolve(data)));
+			return true;
 		} catch (e) {
 			console.log(e);
-			return null;
+			return false;
 		}
 	}
 }
