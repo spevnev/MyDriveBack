@@ -18,8 +18,13 @@ export class UserService {
 		return user[0];
 	}
 
-	async getUsers(usernames: string[]): Promise<UsernameToId[]> {
+	async getUsersByUsernames(usernames: string[]): Promise<UsernameToId[]> {
 		const users = await this.DBService.query("select * from users where username = any($1);", [usernames]) as [UserModel];
+		return users.map(user => ({username: user.username, id: user.id}));
+	}
+
+	async getUsersByIds(user_ids: number[]): Promise<UsernameToId[]> {
+		const users = await this.DBService.query("select * from users where id = any($1);", [user_ids]) as [UserModel];
 		return users.map(user => ({username: user.username, id: user.id}));
 	}
 

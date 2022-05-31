@@ -10,7 +10,7 @@ import {UserData} from "../../middleware/authentication/user.data";
 import {UserService} from "../user/user.service";
 import {S3Service} from "../../services/s3.service";
 import {UploadFilesReturn} from "./dto/uploadFiles.return";
-import {ShareEntriesArgs} from "./dto/shareEntries.args";
+import {ShareEntriesArgs, SharePolicies} from "./dto/shareEntries.args";
 import {SimpleFileEntry} from "./dto/simpleFileEntry";
 import {MoveEntriesArgs, MoveEntriesEntry} from "./dto/moveEntries.args";
 import {GetPresignedUrl} from "./dto/getPresignedUrls";
@@ -30,12 +30,10 @@ export class FileResolver {
 		@Args("id", {type: () => Number}) id: number,
 		@MiddlewareData() {id: user_id}: UserData,
 	): Promise<FileModel | null> {
-		const file: FileModel | null = await this.fileService.getEntry(id);
-		if (file === null) return null;
+		const hasAccess = await this.fileService.hasAccess(user_id, id);
+		if (hasAccess === null) return null;
 
-		const isShared: object | null = await this.fileService.hasAccess(user_id, file.id);
-		if (file.owner_id !== user_id && isShared === null) return null;
-		return file;
+		return await this.fileService.getEntry(id, user_id);
 	}
 
 	@Query(returns => String, {nullable: true})
@@ -73,10 +71,10 @@ export class FileResolver {
 		const hasAccess = await this.fileService.hasAccess(user_id, parent_id);
 		if (hasAccess === null) return null;
 
-		const entries = await this.fileService.getEntries(parent_id);
+		const entries = await this.fileService.getEntries(parent_id, user_id);
 		if (include_previews) return await this.addPreviews(entries, user_id);
 
-		return entries;
+		return entries.map(entry => ({...entry, can_edit: hasAccess.canEdit}));
 	}
 
 	@Query(returns => [GetPresignedUrl], {nullable: true})
@@ -97,7 +95,7 @@ export class FileResolver {
 				return;
 			}
 
-			const childEntries = await this.fileService.getEntries(id, true);
+			const childEntries = await this.fileService.getEntries(id, user_id, true);
 			entries.push(...childEntries);
 		}));
 
@@ -147,6 +145,19 @@ export class FileResolver {
 		@MiddlewareData() {id: user_id}: UserData,
 	): Promise<FileModel[]> {
 		return await this.fileService.getUsersSharedEntries(user_id, username);
+	}
+
+	@Query(returns => [SharePolicies])
+	async entriesSharePolicies(
+		@Args("entry_ids", {type: () => [Number]}) entry_ids: number[],
+		@MiddlewareData() {id: user_id}: UserData,
+	): Promise<SharePolicies[]> {
+		return (await Promise.all(entry_ids.map(async id => {
+			const hasAccess = await this.fileService.hasAccess(user_id, id);
+			if (!hasAccess) return null;
+
+			return await this.fileService.getSharePolicy(id);
+		}))).filter(policy => policy !== null);
 	}
 
 
@@ -270,7 +281,7 @@ export class FileResolver {
 
 		for (let i = 0; i < entries.length; i++) {
 			const entry = await this.fileService.getEntry(entries[i].id);
-			const allEntries = entry.is_directory ? await this.fileService.getEntries(entry.id, true) : [entry];
+			const allEntries = entry.is_directory ? await this.fileService.getEntries(entry.id, user_id, true) : [entry];
 
 			await Promise.all(allEntries.map(async entry => {
 				const key = `${entry.owner_id}/${entry.id}`;
@@ -289,14 +300,14 @@ export class FileResolver {
 	async restoreEntries(
 		@Args("entry_ids", {type: () => [Number]}) entry_ids: number[],
 		@Args("restore_to_drive", {type: () => Boolean}) restore_to_drive: boolean,
-		@MiddlewareData() {bin_id, drive_id}: UserData,
+		@MiddlewareData() {id: user_id, bin_id, drive_id}: UserData,
 	): Promise<boolean> {
 		let entries: FileModel[] = [];
 		for (let i = 0; i < entry_ids.length; i++) {
 			const entry = await this.fileService.getEntry(entry_ids[i]);
 			if (entry.parent_id !== bin_id) return false;
 
-			entries.push(...(entry.is_directory ? await this.fileService.getEntries(entry.id, true) : [entry]));
+			entries.push(...(entry.is_directory ? await this.fileService.getEntries(entry.id, user_id, true) : [entry]));
 		}
 		entries = entries.filter(entry => !!entry.bin_data);
 
@@ -325,14 +336,14 @@ export class FileResolver {
 	@Mutation(returns => Boolean)
 	async fullyDeleteEntries(
 		@Args("entry_ids", {type: () => [Number]}) entry_ids: number[],
-		@MiddlewareData() {bin_id}: UserData,
+		@MiddlewareData() {id: user_id, bin_id}: UserData,
 	): Promise<boolean> {
 		const entries: FileModel[] = [];
 		for (let i = 0; i < entry_ids.length; i++) {
 			const entry = await this.fileService.getEntry(entry_ids[i]);
 			if (entry.parent_id !== bin_id) return false;
 
-			entries.push(...(entry.is_directory ? await this.fileService.getEntries(entry.id, true) : [entry]));
+			entries.push(...(entry.is_directory ? await this.fileService.getEntries(entry.id, user_id, true) : [entry]));
 		}
 
 		const ids: number[] = entries.map(entry => entry.bin_data ? entry.id : null).filter(a => a !== null);

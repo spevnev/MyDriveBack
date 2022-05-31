@@ -1,6 +1,7 @@
-import {ArgsType, Field, InputType} from "@nestjs/graphql";
+import {ArgsType, Field, InputType, ObjectType} from "@nestjs/graphql";
 
 @InputType()
+@ObjectType("SharePoliciesObjectType")
 export class SharePolicies {
 	@Field(type => [Number])
 	can_read_users: number[];

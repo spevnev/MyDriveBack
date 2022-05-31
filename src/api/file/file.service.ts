@@ -5,7 +5,7 @@ import {SimpleFileEntryInput} from "./dto/uploadFiles.args";
 import {FileEntry} from "./dto/uploadFilesAndFolders.args";
 import {UserService} from "../user/user.service";
 import {MoveEntriesEntry} from "./dto/moveEntries.args";
-import {BinData} from "./dto/binData";
+import {SharePolicies} from "./dto/shareEntries.args";
 
 @Injectable()
 export class FileService {
@@ -14,44 +14,48 @@ export class FileService {
 		private userService: UserService,
 	) {}
 
-	async getEntry(entry_id: number): Promise<FileModel | null> {
-		const result = await this.DBService.query(`
-			select f.*, (to_json(b)::jsonb - 'id') as bin_data from files as f 
+	async getEntry(entry_id: number, user_id?: number): Promise<FileModel | null> {
+		const [entry] = await this.DBService.query(`
+			select f.*, s.can_edit_users, (to_json(b)::jsonb - 'id') as bin_data from files as f 
+			left join share as s on f.share_id = s.id
 			left join bin as b on f.id = b.id
 			where f.id = $1;
-		`, [entry_id]) as [FileModel?];
+		`, [entry_id]) as [any];
+		if (!entry) return null;
 
-		return result.length === 1 ? result[0] : null;
+		const can_edit: boolean = user_id ? entry.owner_id === user_id || (entry.can_edit_users || []).includes(user_id) : false;
+		return {...entry, can_edit} as FileModel;
 	}
 
-	async getEntries(parent_id: number, recursively = false): Promise<FileModel[]> {
-		if (!recursively) {
-			return await this.DBService.query(`
-				select f.*, (to_json(b)::jsonb - 'id') as bin_data from files as f
+	async getEntries(parent_id: number, user_id: number, recursively = false): Promise<FileModel[]> {
+		const result = recursively ?
+			await this.DBService.query(`
+				with recursive recfiles as (
+				  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files as f
+					where id = $1 and is_directory = true
+				  union
+				  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files as f
+					inner join recfiles r on f.parent_id = r.id
+				) select r.*, s.can_edit_users, (to_json(b)::jsonb - 'id') as bin_data from recfiles as r
+				left join share as s on f.share_id = s.id
+				left join bin as b on r.id = b.id;
+			`, [parent_id]) :
+			await this.DBService.query(`
+				select f.*, s.can_edit_users, (to_json(b)::jsonb - 'id') as bin_data from files as f
+				left join share as s on f.share_id = s.id
 				left join bin as b on f.id = b.id
 				where parent_id = $1;
-			`, [parent_id]) as FileModel[];
-		}
+			`, [parent_id]);
 
-		return await this.DBService.query(`
-			with recursive recfiles as (
-			  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files as f
-				where id = $1 and is_directory = true
-			  union
-			  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files as f
-				inner join recfiles r on f.parent_id = r.id
-			) select *, r.*, (to_json(b)::jsonb - 'id') as bin_data from recfiles as r
-			left join bin as b on r.id = b.id;
-		`, [parent_id]) as FileModel[];
+		return result.map((entry: any) => ({
+			...entry,
+			can_edit: entry.owner_id === user_id || (entry.can_edit_users || []).includes(user_id),
+			can_edit_users: undefined,
+		})) as FileModel[];
 	}
 
 	async getFolders(parent_id: number): Promise<FileModel[]> {
 		return await this.DBService.query("select * from files where parent_id = $1 and is_directory = true;", [parent_id]) as FileModel[];
-	}
-
-	async getBinData(id: number): Promise<BinData> {
-		const [data] = await this.DBService.query("select * from bin where id = $1;", [id]) as [BinData];
-		return data;
 	}
 
 	async getFoldersInFolderRecursively(parent_id: number): Promise<FileModel[]> {
@@ -99,21 +103,29 @@ export class FileService {
 	}
 
 	async getUsersSharedEntries(user_id: number, username: string): Promise<FileModel[]> {
-		return await this.DBService.query(`
+		const result = await this.DBService.query(`
 			with s as (
 				select array_agg(id) ids from share as s where s.can_read_users @> $1
-			),   f as (
+			), f as (
 				select f.* from s, files as f
 				join users as u on f.owner_id = u.id
 				where username = $2 and share_id = any(s.ids)
-			) select f.* from f
+			) select f.*, s.can_edit_users from f
 			join files as p on f.parent_id = p.id
+			join share as s on f.share_id = s.id
 			where p.share_id is null or p.share_id != f.share_id;
-		`, [[user_id], username]) as FileModel[];
+		`, [[user_id], username]);
+
+		return result.map((entry: any) => ({...entry, can_edit: entry.can_edit_users.includes(user_id), can_edit_users: undefined})) as FileModel[];
 	}
 
 
-	async getSharePolicy(entry_id: number, user_id: number): Promise<{ canEdit: boolean } | null> {
+	async getSharePolicy(entry_id: number): Promise<SharePolicies | null> {
+		const [result] = await this.DBService.query(`select s.* from files as f right join share as s on f.share_id = s.id where f.id = $1;`, [entry_id]) as [SharePolicies?];
+		return result || null;
+	}
+
+	async getSharePolicyForUser(entry_id: number, user_id: number): Promise<{ canEdit: boolean } | null> {
 		const result = await this.DBService.query(`
 			with recursive
 			s as (
@@ -141,11 +153,11 @@ export class FileService {
 	}
 
 	async hasAccess(user_id: number, parent_id: number): Promise<{ canEdit: boolean } | null> {
-		const file = await this.getEntry(parent_id);
-		if (file === null) return null;
-		if (file.owner_id === user_id) return {canEdit: true};
+		const entry = await this.getEntry(parent_id, user_id);
+		if (entry === null) return null;
+		if (entry.owner_id === user_id) return {canEdit: true};
 
-		return await this.getSharePolicy(file.id, user_id);
+		return await this.getSharePolicyForUser(entry.id, user_id);
 	}
 
 	isImage(filename: string): boolean {

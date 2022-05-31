@@ -35,4 +35,7 @@ export class FileModel {
 
 	@Field(type => BinData, {nullable: true})
 	bin_data?: BinData;
+
+	@Field(type => Boolean, {nullable: true})
+	can_edit?: boolean;
 }

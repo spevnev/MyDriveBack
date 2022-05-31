@@ -31,7 +31,14 @@ export class UserResolver {
 	async users(
 		@Args("usernames", {type: () => [String]}) usernames: string[],
 	): Promise<UsernameToId[]> {
-		return await this.userService.getUsers(usernames);
+		return await this.userService.getUsersByUsernames(usernames);
+	}
+
+	@Query(returns => [UsernameToId], {nullable: true})
+	async usernames(
+		@Args("user_ids", {type: () => [Number]}) user_ids: number[],
+	): Promise<UsernameToId[]> {
+		return await this.userService.getUsersByIds(user_ids);
 	}
 
 	@Query(returns => Boolean)
