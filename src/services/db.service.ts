@@ -56,7 +56,8 @@ export class DBService {
     		(
     			id             int         not null unique,
     			put_at         bigint      not null default (round(extract(epoch from now()) * 1000)),
-    			prev_parent_id int         not null
+    			prev_parent_id int         not null,
+    			prev_share_id int
 			);`],
 		]);
 	}

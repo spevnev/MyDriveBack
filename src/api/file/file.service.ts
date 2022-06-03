@@ -31,13 +31,13 @@ export class FileService {
 		const result = recursively ?
 			await this.DBService.query(`
 				with recursive recfiles as (
-				  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files as f
+				  select f.* from files as f
 					where id = $1 and is_directory = true
 				  union
-				  select f.id, f.parent_id, f.name, f.is_directory, f.owner_id from files as f
+				  select f.* from files as f
 					inner join recfiles r on f.parent_id = r.id
 				) select r.*, s.can_edit_users, (to_json(b)::jsonb - 'id') as bin_data from recfiles as r
-				left join share as s on f.share_id = s.id
+				left join share as s on r.share_id = s.id
 				left join bin as b on r.id = b.id;
 			`, [parent_id]) :
 			await this.DBService.query(`
@@ -46,12 +46,9 @@ export class FileService {
 				left join bin as b on f.id = b.id
 				where parent_id = $1;
 			`, [parent_id]);
+		if (!result) return [];
 
-		return result.map((entry: any) => ({
-			...entry,
-			can_edit: entry.owner_id === user_id || (entry.can_edit_users || []).includes(user_id),
-			can_edit_users: undefined,
-		})) as FileModel[];
+		return result.map((entry: any) => ({...entry, can_edit: entry.owner_id === user_id || (entry.can_edit_users || []).includes(user_id)})) as FileModel[];
 	}
 
 	async getFolders(parent_id: number): Promise<FileModel[]> {
@@ -72,29 +69,37 @@ export class FileService {
 	}
 
 	async getSharedFolders(user_id: number): Promise<FileModel[]> {
-		return await this.DBService.query(`
+		const result = await this.DBService.query(`
 			with s as (
-				select array_agg(id) ids from share as s where s.can_read_users @> $1
-			) select f.* from s, files as f
-			where is_directory = true and share_id = any(s.ids);
+			  select id, can_edit_users from share as s where s.can_read_users @> $1
+			)
+			select f.*, can_edit_users from files as f
+			inner join s on s.id = f.share_id
+			where is_directory = true;
 		`, [[user_id]]) as FileModel[];
+
+		return result.map((entry: any) => ({...entry, can_edit: entry.can_edit_users.includes(user_id)})) as FileModel[];
 	}
 
 	async getSharedFoldersAndOwnerUsernames(user_id: number): Promise<FileModel[]> {
-		return await this.DBService.query(`
+		const result = await this.DBService.query(`
 			with s as (
-				select array_agg(id) ids from share as s where s.can_read_users @> $1
-			) select f.*, username from s, files as f
-			join users as u on f.owner_id = u.id
-			where is_directory = true and share_id = any(s.ids);
+			  select id, can_edit_users from share as s where s.can_read_users @> $1
+			) select f.*, can_edit_users, username from files as f
+			inner join users as u on f.owner_id = u.id
+			inner join s on f.share_id = s.id
+			where is_directory = true;
 		`, [[user_id]]) as FileModel[];
+
+		return result.map((entry: any) => ({...entry, can_edit: entry.can_edit_users.includes(user_id)})) as FileModel[];
 	}
 
 	async getUsernamesWhoShareWithUser(user_id: number): Promise<string[]> {
 		const result = await this.DBService.query(`
 			with s as (
-				select array_agg(id) ids from share as s where s.can_read_users @> $1
-			) select username from s, files as f 
+			  select array_agg(id) ids from share as s where s.can_read_users @> $1
+			) 
+			select username from s, files as f 
 			join users as u on f.owner_id = u.id
 			where is_directory = true and share_id = any(s.ids);
 		`, [[user_id]]) as { username: string }[];
@@ -105,18 +110,19 @@ export class FileService {
 	async getUsersSharedEntries(user_id: number, username: string): Promise<FileModel[]> {
 		const result = await this.DBService.query(`
 			with s as (
-				select array_agg(id) ids from share as s where s.can_read_users @> $1
+			  select id, can_edit_users from share as s where s.can_read_users @> $1
 			), f as (
-				select f.* from s, files as f
-				join users as u on f.owner_id = u.id
-				where username = $2 and share_id = any(s.ids)
-			) select f.*, s.can_edit_users from f
+			  select f.*, s.can_edit_users from files as f
+			  inner join users as u on f.owner_id = u.id
+			  inner join s on s.id = f.share_id
+			  where username = $2
+			)
+			select f.* from f
 			join files as p on f.parent_id = p.id
-			join share as s on f.share_id = s.id
 			where p.share_id is null or p.share_id != f.share_id;
 		`, [[user_id], username]);
 
-		return result.map((entry: any) => ({...entry, can_edit: entry.can_edit_users.includes(user_id), can_edit_users: undefined})) as FileModel[];
+		return result.map((entry: any) => ({...entry, can_edit: entry.can_edit_users.includes(user_id)})) as FileModel[];
 	}
 
 
@@ -126,28 +132,18 @@ export class FileService {
 	}
 
 	async getSharePolicyForUser(entry_id: number, user_id: number): Promise<{ canEdit: boolean } | null> {
-		const result = await this.DBService.query(`
-			with recursive
-			s as (
-			  select * from share where $1 @> can_read_users or $1 @> can_edit_users 
-			),
-			directories as (
-				select * from files where id = $2
-				union
-				select f.* from s, files as f
-				join directories as d
-				on f.parent_id = d.id
-				where f.share_id = s.id
+		const [result] = await this.DBService.query(`
+			with f as (
+			  select * from files where id = $1
 			)
-			select * from s;
-		`, [[user_id], entry_id]) as [{ can_edit_users: number[], can_read_users: number[] }];
+			select s.* from share as s, f
+			where s.id = f.share_id;
+		`, [entry_id]) as [{ can_edit_users: number[], can_read_users: number[] }?];
+		if (!result) return null;
 
-		for (let i = 0; i < result.length; i++) {
-			const {can_edit_users, can_read_users} = result[i];
-
-			if (can_edit_users.includes(user_id)) return {canEdit: true};
-			if (can_read_users.includes(user_id)) return {canEdit: false};
-		}
+		const {can_edit_users, can_read_users} = result;
+		if (can_edit_users.includes(user_id)) return {canEdit: true};
+		if (can_read_users.includes(user_id)) return {canEdit: false};
 
 		return null;
 	}
@@ -257,6 +253,11 @@ export class FileService {
 
 	async shareEntries(entry_id: number, policies: { can_read_users: number[], can_edit_users: number[] }) {
 		const {can_read_users, can_edit_users} = policies;
+		can_edit_users.forEach(id => {
+			if (can_read_users.includes(id)) return;
+			can_read_users.push(id);
+		});
+
 		const entry = await this.getEntry(entry_id);
 		const parent = await this.getEntry(entry.parent_id);
 
@@ -267,13 +268,15 @@ export class FileService {
 
 			await this.DBService.query(`
 				with recursive directories as (
-					select * from files where id = $1
-				  	union
-				  	select f.* from files as f
-				  	join directories d
-				  	on d.id = f.parent_id
-				  	where d.share_id = $2 or d.share_id is null
-				) update files as f set share_id = $3 from directories as d where f.id = d.id;
+				  select * from files where id = $1
+				  union
+				  select f.* from files as f
+				  join directories d
+				  on d.id = f.parent_id
+				  where d.share_id = $2 or d.share_id is null
+				) 
+				update files as f set share_id = $3 from directories as d
+				where f.id = d.id;
 			`, [entry_id, entry.share_id, share_id]);
 		}
 	}
@@ -282,8 +285,11 @@ export class FileService {
 		const [ids, parent_ids, names] = entries.reduce(([a1, a2, a3], {id, parent_id, name}) => [[...a1, id], [...a2, parent_id], [...a3, name]], [[], [], []]);
 
 		await this.DBService.query(`
-			with data as (select  unnest($1::int[]) as id, unnest($2::int[]) as parent_id, unnest($3::varchar[]) as name)
-			update files as f set parent_id = $4, name = d.name from data as d where f.parent_id = d.parent_id and f.id = d.id;
+			with data as (
+			  select unnest($1::int[]) as id, unnest($2::int[]) as parent_id, unnest($3::varchar[]) as name
+			)
+			update files as f set parent_id = $4, name = d.name from data as d
+			where f.parent_id = d.parent_id and f.id = d.id;
 		`, [ids as number[], parent_ids as number[], names as string[], parent_id]);
 	}
 
@@ -291,8 +297,13 @@ export class FileService {
 		await this.DBService.query(`update files set name = $1 where id = $2;`, [newFilename, entry_id]);
 	}
 
-	async addEntryToBin(entry_id: number, parent_id: number) {
-		await this.DBService.query(`insert into bin(id, prev_parent_id) values($1, $2);`, [entry_id, parent_id]);
+	async addEntryToBin(entry_id: number, parent_id: number, share_id: number | null) {
+		await this.DBService.query(`insert into bin(id, prev_parent_id, prev_share_id) values($1, $2, $3);`, [entry_id, parent_id, share_id]);
+		await this.DBService.query(`update files set share_id = null where id = $1`, [entry_id]);
+	}
+
+	async setShareId(entry_id: number, share_id: number) {
+		await this.DBService.query(`update files set share_id = $1 where id = $2;`, [share_id, entry_id]);
 	}
 
 	async removeEntriesFromBin(entry_ids: number[]) {
@@ -322,7 +333,8 @@ export class FileService {
 			  select (count(1) - 1) as count, s.id from share as s
 			  left join files as f on f.share_id = s.id
 			  group by s.id
-			) delete from share as s
+			) 
+			delete from share as s
 			where (select count from c where c.id = s.id) = 0;
 		`);
 	}

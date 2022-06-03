@@ -51,6 +51,17 @@ export class FileResolver {
 		return url || null;
 	}
 
+	@Query(returns => String)
+	async entryOwnerUsername(
+		@Args("file_id", {type: () => Number}) file_id: number,
+	): Promise<string> {
+		const entry = await this.fileService.getEntry(file_id);
+		if (!entry) return "";
+
+		const user = await this.userService.getUser(null, entry.owner_id);
+		return user.username;
+	}
+
 	async addPreviews(entries: FileModel[], user_id: number): Promise<FileModel[]> {
 		return await Promise.all(entries.map(async entry => {
 			if (entry.is_directory === true || !this.fileService.isImage(entry.name)) return entry;
@@ -272,26 +283,29 @@ export class FileResolver {
 	@Mutation(returns => Boolean)
 	async putEntriesInBin(
 		@Args("entries", {type: () => [MoveEntriesEntry]}) entries: MoveEntriesEntry[],
-		@MiddlewareData() {id: user_id, bin_id}: UserData,
+		@MiddlewareData() {id: user_id, bin_id: currentUserBinId}: UserData,
 	): Promise<boolean> {
 		for (let i = 0; i < entries.length; i++) {
 			const hasAccess = await this.fileService.hasAccess(user_id, entries[i].id);
 			if (!hasAccess) return false;
 		}
 
+		let ownerId = 0;
 		for (let i = 0; i < entries.length; i++) {
 			const entry = await this.fileService.getEntry(entries[i].id);
 			const allEntries = entry.is_directory ? await this.fileService.getEntries(entry.id, user_id, true) : [entry];
+			ownerId = entry.owner_id;
 
 			await Promise.all(allEntries.map(async entry => {
 				const key = `${entry.owner_id}/${entry.id}`;
 				if (!entry.is_directory) await this.S3Service.tagObject(key, "inBin", "true");
-				await this.fileService.addEntryToBin(entry.id, entry.parent_id);
+				await this.fileService.addEntryToBin(entry.id, entry.parent_id, entry.share_id);
 
 				if (this.fileService.isImage(entry.name)) await this.S3Service.tagObject(`${key}-preview`, "inBin", "true");
 			}));
 		}
 
+		const bin_id = user_id === ownerId ? currentUserBinId : (await this.userService.getUser(null, ownerId)).bin_id;
 		await this.fileService.moveEntries(entries, bin_id);
 		return true;
 	}
@@ -327,6 +341,7 @@ export class FileResolver {
 			}
 
 			await this.fileService.moveEntries([entry], folderIdToRestoreTo);
+			await this.fileService.setShareId(entry.id, entry.bin_data.prev_share_id);
 		}));
 
 		await this.fileService.removeEntriesFromBin(allEntryIds);

@@ -7,4 +7,7 @@ export class BinData {
 
 	@Field(type => Number)
 	prev_parent_id: number;
+
+	@Field(type => Number, {nullable: true})
+	prev_share_id: number | null;
 }

@@ -11,8 +11,11 @@ export class UserService {
 		private DBService: DBService,
 	) {}
 
-	async getUser(username: string): Promise<UserModel | null> {
-		const user = await this.DBService.query("select * from users where username = $1;", [username]) as [UserModel];
+	async getUser(username: string | null, id?: number): Promise<UserModel | null> {
+		const user = (username === null && id ?
+				await this.DBService.query("select * from users where id = $1;", [id]) :
+				await this.DBService.query("select * from users where username = $1;", [username])
+		) as UserModel[];
 		if (user.length !== 1) return null;
 
 		return user[0];
