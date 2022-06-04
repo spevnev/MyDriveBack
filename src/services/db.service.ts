@@ -8,6 +8,7 @@ export class DBService {
 	constructor() {
 		this.client = new Pool({
 			connectionString: process.env.DATABASE_URL,
+			ssl: {rejectUnauthorized: false},
 			max: 20,
 		});
 
