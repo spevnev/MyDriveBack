@@ -173,14 +173,17 @@ export class FileResolver {
 
 
 	async upload(
-		{drive_id, id: owner_id}: UserData,
+		{drive_id, id: user_id}: UserData,
 		{parent_id, entries}: UploadFilesAndFoldersArgs,
 		topLevelEntries: SimpleFileEntry[] | FileEntry[],
 	): Promise<UploadFilesReturn[] | null> {
 		parent_id = parent_id || drive_id;
 
 		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
-		if (!await this.fileService.canUpload(owner_id, parent_id, topLevelEntries as FileEntry[], size)) return null;
+		if (!await this.fileService.canUpload(user_id, parent_id, topLevelEntries as FileEntry[], size)) return null;
+
+		const folder = await this.fileService.getEntry(parent_id);
+		const owner_id = folder.owner_id;
 		await this.userService.increaseUsedSpace(owner_id, size);
 
 		const containsFolders = entries.reduce((val, cur) => val ? true : cur.is_directory !== undefined, false);
@@ -271,12 +274,18 @@ export class FileResolver {
 		const hasAccessToFolder = await this.fileService.hasAccess(user_id, parent_id);
 		if (!hasAccessToFolder) return false;
 
+		const allEntries: FileModel[] = [];
 		for (let i = 0; i < entries.length; i++) {
 			const hasAccessToEntry = await this.fileService.hasAccess(user_id, entries[i].id);
 			if (!hasAccessToEntry) return false;
+
+			allEntries.push(await this.fileService.getEntry(entries[i].id));
 		}
 
-		await this.fileService.moveEntries(entries, parent_id);
+		const folder = await this.fileService.getEntry(parent_id);
+		if (folder.owner_id !== user_id) await this.fileService.changeOwnerRecursively(allEntries, folder.owner_id, user_id);
+
+		await this.fileService.moveEntries(entries, parent_id, true);
 		return true;
 	}
 
@@ -306,7 +315,7 @@ export class FileResolver {
 		}
 
 		const bin_id = user_id === ownerId ? currentUserBinId : (await this.userService.getUser(null, ownerId)).bin_id;
-		await this.fileService.moveEntries(entries, bin_id);
+		await this.fileService.moveEntries(entries, bin_id, true);
 		return true;
 	}
 
@@ -362,7 +371,11 @@ export class FileResolver {
 		}
 
 		const ids: number[] = entries.map(entry => entry.bin_data ? entry.id : null).filter(a => a !== null);
+		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
+
 		await this.fileService.fullyDeleteEntries(ids);
+		await this.userService.decreaseUsedSpace(user_id, size);
+
 		return true;
 	}
 }

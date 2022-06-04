@@ -281,8 +281,19 @@ export class FileService {
 		}
 	}
 
-	async moveEntries(entries: MoveEntriesEntry[], parent_id: number) {
+	async moveEntries(entries: MoveEntriesEntry[], parent_id: number, resetShareId = false) {
 		const [ids, parent_ids, names] = entries.reduce(([a1, a2, a3], {id, parent_id, name}) => [[...a1, id], [...a2, parent_id], [...a3, name]], [[], [], []]);
+
+		if (resetShareId) {
+			await this.DBService.query(`
+			with data as (
+			  select unnest($1::int[]) as id, unnest($2::int[]) as parent_id, unnest($3::varchar[]) as name
+			)
+			update files as f set parent_id = $4, name = d.name, share_id = null from data as d
+			where f.parent_id = d.parent_id and f.id = d.id;
+		`, [ids as number[], parent_ids as number[], names as string[], parent_id]);
+			return;
+		}
 
 		await this.DBService.query(`
 			with data as (
@@ -293,13 +304,30 @@ export class FileService {
 		`, [ids as number[], parent_ids as number[], names as string[], parent_id]);
 	}
 
+	async changeOwnerRecursively(entries: FileModel[], owner_id: number, prev_owner_id: number) {
+		const entry_ids = entries.map(entry => entry.id);
+		await this.DBService.query(`
+			with recursive entries as (
+			  select f.* from files as f
+			  where id = any($1)
+			  union
+			  select f.* from files as f
+			  inner join entries e on f.parent_id = e.id
+			)
+			update files as f set owner_id = $2 from entries as e where f.id = e.id;
+		`, [entry_ids, owner_id]);
+
+		const size = entries.reduce((sum, cur) => sum + cur.size, 0);
+		await this.userService.increaseUsedSpace(owner_id, size);
+		await this.userService.decreaseUsedSpace(prev_owner_id, size);
+	}
+
 	async renameEntry(entry_id: number, newFilename: string) {
 		await this.DBService.query(`update files set name = $1 where id = $2;`, [newFilename, entry_id]);
 	}
 
 	async addEntryToBin(entry_id: number, parent_id: number, share_id: number | null) {
 		await this.DBService.query(`insert into bin(id, prev_parent_id, prev_share_id) values($1, $2, $3);`, [entry_id, parent_id, share_id]);
-		await this.DBService.query(`update files set share_id = null where id = $1`, [entry_id]);
 	}
 
 	async setShareId(entry_id: number, share_id: number) {
@@ -328,7 +356,7 @@ export class FileService {
 		});
 		Object.entries(userToSpace).forEach(([user_id, space]) => this.userService.decreaseUsedSpace(Number(user_id), space));
 
-		this.DBService.query(`
+		await this.DBService.query(`
 			with c as (
 			  select (count(1) - 1) as count, s.id from share as s
 			  left join files as f on f.share_id = s.id
