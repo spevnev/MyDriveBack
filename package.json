@@ -2,9 +2,10 @@
   "name": "my-drive-back",
   "version": "0.0.1",
   "description": "",
-  "author": "",
-  "private": true,
-  "license": "UNLICENSED",
+  "main": "main.js",
+  "engines": {
+    "node": "17.8.0"
+  },
   "scripts": {
     "build": "nest build",
     "start": "nest start --watch"
