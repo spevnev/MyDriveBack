@@ -43,17 +43,7 @@ export class S3Service {
 		};
 
 		try {
-			// const {url, fields} = await this.client.createPresignedPost(parameters);
-			const url = "sample url";
-			const fields = {
-				bucket: "1",
-				key: "1",
-				Policy: "1",
-				"X-Amz-Algorithm": "1",
-				"X-Amz-Date": "1",
-				"X-Amz-Credential": "1",
-				"X-Amz-Signature": "1",
-			};
+			const {url, fields} = await this.client.createPresignedPost(parameters);
 
 			return {
 				url,
@@ -81,8 +71,7 @@ export class S3Service {
 		};
 
 		try {
-			// return await this.client.getSignedUrlPromise("getObject", parameters);
-			return null;
+			return await this.client.getSignedUrlPromise("getObject", parameters);
 		} catch (e) {
 			console.log(e);
 			return null;
@@ -97,8 +86,7 @@ export class S3Service {
 		};
 
 		try {
-			// await new Promise((resolve, reject) => this.client.putObjectTagging(params, (err, data) => err ? reject(err) : resolve(data)));
-			return true;
+			await new Promise((resolve, reject) => this.client.putObjectTagging(params, (err, data) => err ? reject(err) : resolve(data)));
 		} catch (e) {
 			console.log(e);
 			return false;
