@@ -7,7 +7,7 @@ export class DBService {
 
 	constructor() {
 		this.client = new Pool({
-			connectionString: process.env.DB_CONNECTION_STRING,
+			connectionString: process.env.DATABASE_URL,
 			max: 20,
 		});
 
@@ -22,7 +22,7 @@ export class DBService {
 
 	async testConnection(): Promise<void> {
 		const res = await this.query("select now()");
-		if (res === null) throw new Error(`Couldn't connect to DB using: ${process.env.DB_CONNECTION_STRING}`);
+		if (res === null) throw new Error(`Couldn't connect to DB using: ${process.env.DATABASE_URL}`);
 	}
 
 	async createTables(): Promise<void> {

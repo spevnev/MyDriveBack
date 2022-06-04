@@ -3,7 +3,7 @@ FROM node:17-alpine
 RUN mkdir app
 WORKDIR app
 
-ENV DB_CONNECTION_STRING="postgresql://root:root@localhost:5432/mydrive"
+ENV DATABASE_URL="postgresql://root:root@localhost:5432/mydrive"
 ENV AWS_API_KEY=""
 ENV AWS_SECRET_KEY=""
 ENV AWS_REGION="us-east-1"
